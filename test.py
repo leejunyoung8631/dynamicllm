@@ -5,12 +5,13 @@ import torch
 import torch.nn as nn
 
 import transformers
-from transformers import AutoTokenizer, LlamaForCausalLM, Trainer
-from transformers import TrainerCallback, TrainerState, TrainerControl
+from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForCausalLM, LlamaTokenizer
+from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConfig
 
 from datahelper import DataHelper
 
 
+from model import LLaMAWithPredictor
 
 
 class LossCallback(TrainerCallback):
@@ -41,11 +42,7 @@ class CustomTrainer(Trainer):
         # Forward pass
         outputs = model(**inputs)
         
-        # The model outputs typically include 'logits', 
-        # but you can adjust this depending on your model
         logits = outputs.get('logits')
-        
-        # Our labels are usually in 'labels' (passed in `inputs`)
         labels = inputs.get('labels')
         
         # Example: CrossEntropyLoss, but you can use any custom logic here
@@ -55,21 +52,30 @@ class CustomTrainer(Trainer):
         # If we want to return outputs (for logging or other use),
         # we return (loss, outputs). Otherwise we just return the loss.
         return (loss, outputs) if return_outputs else loss
-
-
-
-
-
-
-class Predictor(nn.Moule):
-    def __init__(self, ):
-        super.__init__()
     
     
-    def forward(self, ):
-        
-        
-        return
+    
+
+def LossPredLoss(input, target, margin=1.0, reduction='mean'):
+    assert len(input) % 2 == 0, 'the batch size is not even.'
+    assert input.shape == input.flip(0).shape
+    
+    input = (input - input.flip(0))[:len(input)//2] # [l_1 - l_2B, l_2 - l_2B-1, ... , l_B - l_B+1], where batch_size = 2B
+    target = (target - target.flip(0))[:len(target)//2]
+    target = target.detach()
+
+    one = 2 * torch.sign(torch.clamp(target, min=0)) - 1 # 1 operation which is defined by the authors
+    
+    if reduction == 'mean':
+        loss = torch.sum(torch.clamp(margin - one * input, min=0))
+        loss = loss / input.size(0) # Note that the size of input is already halved
+    elif reduction == 'none':
+        loss = torch.clamp(margin - one * input, min=0)
+    else:
+        NotImplementedError()
+    
+    return loss
+
     
     
 
@@ -146,48 +152,30 @@ def create_trainer(
 
 
 
-        
-
-
-def LossPredLoss(input, target, margin=1.0, reduction='mean'):
-    assert len(input) % 2 == 0, 'the batch size is not even.'
-    assert input.shape == input.flip(0).shape
-    
-    input = (input - input.flip(0))[:len(input)//2] # [l_1 - l_2B, l_2 - l_2B-1, ... , l_B - l_B+1], where batch_size = 2B
-    target = (target - target.flip(0))[:len(target)//2]
-    target = target.detach()
-
-    one = 2 * torch.sign(torch.clamp(target, min=0)) - 1 # 1 operation which is defined by the authors
-    
-    if reduction == 'mean':
-        loss = torch.sum(torch.clamp(margin - one * input, min=0))
-        loss = loss / input.size(0) # Note that the size of input is already halved
-    elif reduction == 'none':
-        loss = torch.clamp(margin - one * input, min=0)
-    else:
-        NotImplementedError()
-    
-    return loss
-
-
-
 def get_model(base_model):
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer)
-    model = LlamaForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
+    # tokenizer = AutoTokenizer.from_pretrained(base_model)
+    tokenizer = LlamaTokenizer.from_pretrained(base_model)
+    model = AutoModelForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
     
-    return tokenizer, model
+    return model, tokenizer
 
 
 
 def main(args):
+    from huggingface_hub import login
+    login("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")  
+    
+    
     base_model = "baffo32/decapoda-research-llama-7B-hf"
     # base_model = "meta-llama/Llama-2-7b-hf"
     model, tokenizer = get_model(base_model)
-    model.eval()
+    m_config = AutoConfig.from_pretrained(base_model)
     
-    model.print_trainable_parameters()
+    model = LLaMAWithPredictor(config=m_config, base_model=model, )
     
-    
+    # Freeze all base model parameters
+    for param in model.base_model.parameters():
+        param.requires_grad = False
     
     dataset_helper = DataHelper(
             tokenizer,
@@ -202,7 +190,6 @@ def main(args):
         train_data, val_data = dataset_helper.create_dataset(
                 args.data_path, args.val_set_size, args.extra_val_dataset,
                 args.cache_dir, args.partial_dir)
-    
 
     # Create trainer
     trainer = create_trainer(
@@ -257,10 +244,30 @@ if __name__ == "__main__":
         default=None,
         help='validation datasets. Split with ","',
     )
-    
-    
-    
+    # Training Hyperparameters
+    parser.add_argument("--batch_size", type=int, default=128, help="batch size")
+    parser.add_argument(
+        "--micro_batch_size", type=int, default=4, help="micro batch size"
+    )
     parser.add_argument("--num_epochs", type=float, default=5, help="number of epochs")
+    parser.add_argument(
+        "--learning_rate", type=float, default=3e-4, help="learning rate"
+    )
+    parser.add_argument(
+        "--prompt_template_name",
+        type=str,
+        default="alpaca",
+        help="The prompt template to use, will default to alpaca.",
+    )
+    parser.add_argument(
+        "--no_instruction",
+        action="store_true",
+        default=False,
+        help="Whether to use the instruction template or not.",
+    )
+    
+    
+    
     parser.add_argument(
         "--output_dir", type=str, default="./finetune", help="output directory"
     )
@@ -285,18 +292,6 @@ if __name__ == "__main__":
         default=False,
         action="store_true",
         help="Train on inputs. If False, masks out inputs in loss",
-    )
-    parser.add_argument(
-        "--no_instruction",
-        action="store_true",
-        default=False,
-        help="Whether to use the instruction template or not.",
-    )
-    parser.add_argument(
-        "--prompt_template_name",
-        type=str,
-        default="alpaca",
-        help="The prompt template to use, will default to alpaca.",
     )
     
     parser.add_argument(

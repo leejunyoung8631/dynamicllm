@@ -162,6 +162,10 @@ class DataHelper:
             train_val = data["train"].train_test_split(
                 test_size=val_set_size, shuffle=True, seed=42
             )
+            
+            print(train_val)
+            exit()
+            
             if train_size is not None:
                 train_val["train"] = train_val["train"].select(range(train_size))
         elif data_path in DataHelper.ZeroShotTasks:
@@ -176,6 +180,27 @@ class DataHelper:
             )
             if train_size is not None:
                 train_val["train"] = train_val["train"].select(range(train_size))
+                
+        elif data_path == "wikitext":
+            from datasets import DatasetDict
+            train_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
+            test_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+            train_val = DatasetDict({
+                "train": train_data,
+                "test": test_data
+            })
+            
+            def preprocess_wikitext(example):
+                        return {
+                "text": example["text"]  # Keep the original text column
+            }
+            processed_datasets = DatasetDict({
+                split: dataset.map(
+                    preprocess_wikitext, 
+                    remove_columns=[col for col in dataset.column_names if col != "text"]
+                )
+                for split, dataset in train_val.items()
+            })
         else:
             # Other datasets
             if train_name is None:
