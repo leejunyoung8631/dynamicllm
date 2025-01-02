@@ -11,43 +11,90 @@ from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConf
 from datahelper import DataHelper
 
 
-from model import LLaMAWithPredictor
+from model import CustomLlamaForCausalLM
+
+import csv
 
 
 class LossCallback(TrainerCallback):
-    def on_train_begin(self, args, state: TrainerState, control: TrainerControl, **kwargs):
-        print("Training has begun with a custom callback.")
-
-    def on_epoch_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
-        print(f"Epoch {int(state.epoch)} finished.")
+    def __init__(self, file_path="loss_log.csv", write_interval=50):
+        """
+        Initialize the callback with a buffer and write interval.
+        """
+        self.file_path = file_path
+        self.write_interval = write_interval
+        self.loss_buffer = []  # Temporary storage for loss data
         
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # Write the header to the CSV file
+        with open(self.file_path, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["step", "loss"])  # CSV Header
+
     
-    # def on_init_end(self, args, state, control, **kwargs):
-    #     return super().on_init_end(args, state, control, **kwargs)
+    def on_step_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Log loss every step in memory and write to the file every `write_interval` steps.
+        """
+        if state.log_history and "loss" in state.log_history[-1]:
+            loss = state.log_history[-1]["loss"]
+            step = state.global_step
+            
+            # Add to buffer
+            self.loss_buffer.append((step, loss))
+            
+            # Write to file if buffer reaches the interval
+            if len(self.loss_buffer) >= self.write_interval:
+                self._flush_buffer()
+                
     
-    # def on_step_begin(self, args, state, control, **kwargs):
-    #     return super().on_step_begin(args, state, control, **kwargs)
-    
-    # def on_step_end(self, args, state, control, **kwargs):
-    #     return super().on_step_end(args, state, control, **kwargs)
+    def _flush_buffer(self):
+        """
+        Write buffered loss data to the CSV file and clear the buffer.
+        """
+        if not self.loss_buffer:
+            return  # Nothing to write
+        
+        with open(self.file_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(self.loss_buffer)
+        
+        print(f"Flushed {len(self.loss_buffer)} steps of loss data to {self.file_path}")
+        self.loss_buffer = []  # Clear the buffer
+        
+
+    def on_train_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Ensure all remaining data is written when training ends.
+        """
+        self._flush_buffer()
+        print("Training finished. All buffered data has been written.")
+
 
 
 
 
 class CustomTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
         We override the compute_loss method to use a custom loss.
         """
         # Forward pass
         outputs = model(**inputs)
         
-        logits = outputs.get('logits')
-        labels = inputs.get('labels')
+        # target
+        labels = inputs.get('labels') 
+        b, n = labels.shape
+        origin_loss = outputs.get("loss")
+        origin_loss = origin_loss.reshape(b, -1).mean(dim=-1)
         
-        # Example: CrossEntropyLoss, but you can use any custom logic here
-        loss_fct = nn.CrossEntropyLoss()
-        loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+        # first layer feature
+        # this will predict the loss 
+        hidden = outputs.get('hidden_states')[0]
+        
+        pred = model.predictor(hidden)
+        loss = LossPredLoss(pred, origin_loss)
         
         # If we want to return outputs (for logging or other use),
         # we return (loss, outputs). Otherwise we just return the loss.
@@ -113,7 +160,7 @@ def create_trainer(
     eval_callback = LossCallback()
     callbacks.append(eval_callback)
 
-    trainer = transformers.Trainer(
+    trainer = CustomTrainer(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,
@@ -139,6 +186,7 @@ def create_trainer(
             ddp_find_unused_parameters=None,
             group_by_length=args.group_by_length,
             # report_to="wandb",
+            report_to="none",
             run_name=args.output_dir.split("/")[-1],
             # metric_for_best_model="{}_loss".format("yahma/alpaca-cleaned"),
             disable_tqdm=(not show_progress),
@@ -155,7 +203,10 @@ def create_trainer(
 def get_model(base_model):
     # tokenizer = AutoTokenizer.from_pretrained(base_model)
     tokenizer = LlamaTokenizer.from_pretrained(base_model)
-    model = AutoModelForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
+    model = CustomLlamaForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
+    
+    model.config.output_hidden_states = True
+    model.config.return_dict = True
     
     return model, tokenizer
 
@@ -164,14 +215,9 @@ def get_model(base_model):
 def main(args):
     from huggingface_hub import login
     login("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")  
-    
-    
     base_model = "baffo32/decapoda-research-llama-7B-hf"
     # base_model = "meta-llama/Llama-2-7b-hf"
     model, tokenizer = get_model(base_model)
-    m_config = AutoConfig.from_pretrained(base_model)
-    
-    model = LLaMAWithPredictor(config=m_config, base_model=model, )
     
     # Freeze all base model parameters
     for param in model.base_model.parameters():
