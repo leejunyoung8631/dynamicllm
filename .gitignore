@@ -1,1 +1,12 @@
+# cache file
 __pycache__/
+
+
+# data file
+*.png
+*.csv
+*.txt
+*.npy
+
+# weight file
+here/

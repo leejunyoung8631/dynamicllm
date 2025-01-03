@@ -1,4 +1,5 @@
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+import inspect
 
 import torch
 import torch.nn as nn
@@ -23,6 +24,92 @@ from transformers.utils import (
 )
 from transformers.cache_utils import Cache, DynamicCache
 
+from transformers.generation.utils import GenerateOutput
+    
+from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
+from transformers.integrations.fsdp import is_fsdp_managed_module
+import torch.distributed as dist
+from transformers.utils import (
+    ModelOutput,
+    is_accelerate_available,
+    is_hqq_available,
+    is_optimum_quanto_available,
+    is_quanto_available,
+    is_torchdynamo_compiling,
+    logging,
+)
+
+
+from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
+
+from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
+from transformers.cache_utils import (
+    Cache,
+    DynamicCache,
+    EncoderDecoderCache,
+    OffloadedCache,
+    QuantizedCacheConfig,
+    StaticCache,
+)
+
+from transformers.generation.configuration_utils import (
+    NEED_SETUP_CACHE_CLASSES_MAPPING,
+    QUANT_BACKEND_CLASSES_MAPPING,
+    GenerationConfig,
+    GenerationMode,
+)
+from transformers.generation.logits_process import (
+    EncoderNoRepeatNGramLogitsProcessor,
+    EncoderRepetitionPenaltyLogitsProcessor,
+    EpsilonLogitsWarper,
+    EtaLogitsWarper,
+    ExponentialDecayLengthPenalty,
+    ForcedBOSTokenLogitsProcessor,
+    ForcedEOSTokenLogitsProcessor,
+    HammingDiversityLogitsProcessor,
+    InfNanRemoveLogitsProcessor,
+    LogitNormalization,
+    LogitsProcessorList,
+    MinLengthLogitsProcessor,
+    MinNewTokensLengthLogitsProcessor,
+    MinPLogitsWarper,
+    NoBadWordsLogitsProcessor,
+    NoRepeatNGramLogitsProcessor,
+    PrefixConstrainedLogitsProcessor,
+    RepetitionPenaltyLogitsProcessor,
+    SequenceBiasLogitsProcessor,
+    SuppressTokensAtBeginLogitsProcessor,
+    SuppressTokensLogitsProcessor,
+    TemperatureLogitsWarper,
+    TopKLogitsWarper,
+    TopPLogitsWarper,
+    TypicalLogitsWarper,
+    UnbatchedClassifierFreeGuidanceLogitsProcessor,
+)
+from transformers.generation.stopping_criteria import (
+    ConfidenceCriteria,
+    EosTokenCriteria,
+    MaxLengthCriteria,
+    MaxTimeCriteria,
+    StoppingCriteria,
+    StoppingCriteriaList,
+    StopStringCriteria,
+)
+
+
+if TYPE_CHECKING:
+    from transformers.modeling_utils import PreTrainedModel
+    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+    from transformers.generation.streamers import BaseStreamer
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class CustomCausalLMOutputWithPast(CausalLMOutputWithPast):
+    # add feature for prediction from layers
+    layer_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
 
 
 class CustomLlamaModel(LlamaModel):
@@ -43,7 +130,7 @@ class CustomLlamaModel(LlamaModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
-        skip_layer = None,
+        skip_layer = [],
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -101,7 +188,7 @@ class CustomLlamaModel(LlamaModel):
 
         
         for n_layer, decoder_layer in enumerate(self.layers):
-            if n_layer not in skip_layer:
+            if n_layer in skip_layer:
                 continue
             
             if output_hidden_states:
@@ -157,9 +244,6 @@ class CustomLlamaModel(LlamaModel):
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
-        
-        
-        
 
 
 
@@ -178,6 +262,8 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
         self.post_init()
         
     
+    
+    from transformers import GenerationMixin 
     
     @torch.no_grad()
     def generate(
@@ -317,7 +403,7 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
                 and len(inputs_tensor.shape) == 2
                 and torch.sum(inputs_tensor[:, -1] == generation_config._pad_token_tensor) > 0
             ):
-                logger.warning(
+                print(
                     "A decoder-only architecture is being used, but right-padding was detected! For correct "
                     "generation results, please set `padding_side='left'` when initializing the tokenizer."
                 )
@@ -409,7 +495,7 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
             )
 
         if not is_torchdynamo_compiling() and self.device.type != input_ids.device.type:
-            warnings.warn(
+            print(
                 "You are calling .generate() with the `input_ids` being on a device type different"
                 f" than your model's device. `input_ids` is on {input_ids.device.type}, whereas the model"
                 f" is on {self.device.type}. You may experience unexpected behaviors or slower generation."
@@ -525,7 +611,8 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
                 is_encoder_decoder=self.config.is_encoder_decoder,
                 **model_kwargs,
             )
-
+            
+            print("sample here")
             # 12. run sample (it degenerates to greedy search when `generation_config.do_sample=False`)
             result = self._sample(
                 input_ids,
@@ -688,7 +775,7 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
                 )
             )
             if not is_user_defined_cache and is_default_cache_type:
-                logger.warning_once(
+                print(
                     "From v4.47 onwards, when a model cache is to be returned, `generate` will return a `Cache` "
                     "instance instead by default (as opposed to the legacy tuple of tuples format). If you want to "
                     "keep returning the legacy format, please set `return_legacy_cache=True`."
@@ -698,12 +785,11 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
                 result.past_key_values = result.past_key_values.to_legacy_cache()
         return result
     
-    
         
     
     
-    @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
+    # @add_start_docstrings_to_model_forward(LLAMA_INPUTS_DOCSTRING)
+    # @replace_return_docstrings(output_type=CausalLMOutputWithPast, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -718,9 +804,9 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
-        skip_layer = None,
+        skip_layer = [],
         **loss_kwargs,
-    ) -> Union[Tuple, CausalLMOutputWithPast]:
+    ) -> Union[Tuple, CustomCausalLMOutputWithPast]:
         r"""
         Args:
             labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -781,6 +867,13 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
         else:
             # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
+        
+        # add for layer-wise prediction
+        layer_predict = ()
+        layer_hidden = outputs.hidden_states # 32, len_token, 4096
+        for i in range(32):
+            layer_predict += (self.lm_head(layer_hidden[i][:, -num_logits_to_keep:, :]), )    
+            
 
         loss = None
         if labels is not None:
@@ -790,10 +883,12 @@ class CustomLlamaForCausalLM(LlamaForCausalLM):
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return CausalLMOutputWithPast(
+        return CustomCausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            layer_hidden_states=layer_hidden,
         )
+        

@@ -4,13 +4,6 @@ import argparse
 import torch
 import torch.nn as nn
 
-import numpy as np
-import random
-
-import pandas as pd
-import matplotlib.pyplot as plt
-
-
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForCausalLM, LlamaTokenizer
 from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConfig
@@ -18,26 +11,21 @@ from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConf
 from datahelper import DataHelper
 
 
-from model_generate import CustomLlamaForCausalLM
+from model import CustomLlamaForCausalLM
+
+import csv
 
 
+from dataset import get_loaders
 
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+
 
 
 
 def get_model(base_model):
     # tokenizer = AutoTokenizer.from_pretrained(base_model)
-    tokenizer = LlamaTokenizer.from_pretrained(base_model)
-    model = CustomLlamaForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=False)
-    # model = CustomLlamaForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
-    # model = LlamaForCausalLM.from_pretrained(base_model, low_cpu_mem_usage=True)
+    tokenizer = LlamaTokenizer.from_pretrained("baffo32/decapoda-research-llama-7B-hf")
+    model = CustomLlamaForCausalLM.from_pretrained(base_model, )
     
     model.config.output_hidden_states = True
     model.config.return_dict = True
@@ -45,97 +33,113 @@ def get_model(base_model):
     return model, tokenizer
 
 
-
-def tokenlayer_table(tokenizer, file="tokeninfo.csv",):
-    # Access the underlying SentencePiece model
-    sp = tokenizer.sp_model
-
-    # Get the total vocabulary size
-    vocab_size = sp.get_piece_size()
-
-    # Build index → token dictionary
-    idx_to_token = {i: sp.id_to_piece(i) for i in range(vocab_size)}
+def load_weight(model, file):
     
-    # read data
-    df = pd.read_csv(file)  # shape = (length, 32)
-    df_tokens = df.applymap(lambda x: idx_to_token[x] if x in idx_to_token else "[UNK]")
+    
+    return model
     
     
     
-    fig, ax = plt.subplots(figsize=(20, 15))
-
-    # Turn off default axis
-    ax.set_axis_off()
-
-    # Create a table at the center
-    table = ax.table(
-        cellText    = df_tokens.values,  # 2D array of strings
-        rowLabels   = df_tokens.index,   # row labels
-        colLabels   = df_tokens.columns, # column labels
-        cellLoc     = 'center',
-        loc         = 'center'
-    )
-
-    # Make it look nicer
-    table.auto_set_font_size(False)
-    table.set_fontsize(8)
-    # table.scale(1.2, 1.2)  # Adjust table size if needed
-
-    # plt.title("2D table-like figure with numeric values (no color)")
-    plt.tight_layout()
-    plt.savefig("./lll.png")
-
-    
-
 
 
 
 def main(args):
-    
     from huggingface_hub import login
     login("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")  
     base_model = "baffo32/decapoda-research-llama-7B-hf"
+    
     # base_model = "meta-llama/Llama-2-7b-hf"
+    base_model = "./here/checkpoint-700"
     model, tokenizer = get_model(base_model)
     model.cuda()
     
-    tokenlayer_table(tokenizer)
-    exit()
+    # Freeze all base model parameters
+    for name, param in model.base_model.named_parameters():
+        param.requires_grad = False
     
-    set_seed(42)
+    # dataset_helper = DataHelper(
+    #         tokenizer,
+    #         args.cutoff_len, args.add_eos_token, args.train_on_inputs,
+    #         args.no_instruction, args.prompt_template_name,
+    #         args.verbose,
+    #         no_template_ratio=0.5)
+    # if args.data_path.endswith(".json"):
+    #     train_data, val_data = dataset_helper.create_dataset_from_json(
+    #             args.data_path)
+    # else:
+    #     train_data, val_data = dataset_helper.create_dataset(
+    #             args.data_path, args.val_set_size, args.extra_val_dataset,
+    #             args.cache_dir, args.partial_dir)
     
-    # Prompt for sentence generation
-    prompt = "the weather is so good and "
+    
+    dataset = "wikitext2"
+    max_seq_len=128
+    batch_size = args.batch_size
+    add_bos_to_every=False
 
-    # Tokenize the input prompt
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-
-    # Generate text with exact length
-    output = model.generate(
-        **inputs,
-        max_length=64,      # Total length of tokens including prompt
-        min_length=64,      # Ensures exactly 64 tokens
-        do_sample=True,     # Enable sampling for diverse output
-        temperature=0.7,    # Controls randomness
-        pad_token_id=tokenizer.eos_token_id  # Avoids padding-related errors
+    
+    _, test_loader = get_loaders(
+            dataset, tokenizer, max_seq_len, batch_size, add_bos_to_every
     )
+    
+    reals = []
+    preds = []
+    
+    with torch.no_grad():
+        for batch in test_loader:
+            batch = batch.to(args.device)
+            b, n = batch.shape
+            
+            output, pred = model.predict(batch)
+            lm_logits = output.logits
 
-    # Decode and print the generated text
-    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-    print("Generated Sentence:\n", generated_text)
+            shift_logits = lm_logits[:, :-1, :].contiguous()
+            shift_labels = batch[:, 1:].contiguous()
+            
+            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+            loss = loss_fct(
+                shift_logits.reshape(-1, shift_logits.size(-1)), shift_labels.view(-1)
+            )
+            
+            loss = loss.reshape(b, -1).mean(-1)
+            
+            listloss = loss.tolist()
+            listpred = pred.tolist()
+            
+            reals.extend(listloss)
+            preds.extend(listpred)
+            
+    
+    # 1. Calculate correlation using NumPy
+    import numpy as np
+    correlation_matrix = np.corrcoef(reals, preds)
+    corr_coefficient = correlation_matrix[0, 1]
+    print("Correlation Coefficient between x1 and x2:", corr_coefficient)        
+    
+            
+    import numpy as np
+    arr1 = np.array(reals)
+    arr2 = np.array(preds)
+    concatenated = np.concatenate((arr1, arr2))
+    np.save("loss_predict.npy", concatenated)
     
     
-    tokenlayer_table(tokenizer)
-
-        
-        
-        
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 10))
+    plt.scatter(reals, preds, color='blue', label=f'r = {corr_coefficient:.2f}')
+    plt.title("Scatter Plot of real vs pred")
+    plt.xlabel("real_loss")
+    plt.ylabel("pred_loss")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("corr.png")
     
-
-
-
-
-
+            
+    
+    
+    
+    
+    return
 
 
 

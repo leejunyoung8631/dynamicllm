@@ -12,7 +12,12 @@ fi
 
 
 
-
+# sentence task
 # CUDA_VISIBLE_DEVICES=0 python test.py --data_path yahma/alpaca-cleaned --learning_rate 1e-4 --batch_size 64 --micro_batch_size 4 
+# CUDA_VISIBLE_DEVICES=2 python test.py --data_path wikitext --learning_rate 1e-4 --batch_size 64 --micro_batch_size 8
 
-CUDA_VISIBLE_DEVICES=2 python test.py --data_path wikitext --learning_rate 1e-4 --batch_size 64 --micro_batch_size 4 
+CUDA_VISIBLE_DEVICES=2 python sentence_infer.py --batch_size 8 
+
+
+# token task
+# CUDA_VISIBLE_DEVICES=1 python gen_test.py  

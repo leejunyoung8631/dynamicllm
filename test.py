@@ -17,7 +17,7 @@ import csv
 
 
 class LossCallback(TrainerCallback):
-    def __init__(self, file_path="loss_log.csv", write_interval=50):
+    def __init__(self, file_path="loss_log.csv", write_interval=30):
         """
         Initialize the callback with a buffer and write interval.
         """
@@ -26,7 +26,7 @@ class LossCallback(TrainerCallback):
         self.loss_buffer = []  # Temporary storage for loss data
         
         # Ensure the directory exists
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        # os.makedirs(os.path.dirname(file_path), exist_ok=True)
         # Write the header to the CSV file
         with open(self.file_path, mode='w', newline='') as file:
             writer = csv.writer(file)
@@ -155,6 +155,12 @@ def create_trainer(
         save_total_limit=None
         load_best_model_at_end=False
         save_strategy="no"
+        
+    
+    save_strategy = "steps"
+    save_steps = 100
+    outdir = "./here"
+    
 
     callbacks = []
     eval_callback = LossCallback()
@@ -220,7 +226,7 @@ def main(args):
     model, tokenizer = get_model(base_model)
     
     # Freeze all base model parameters
-    for param in model.base_model.parameters():
+    for name, param in model.base_model.named_parameters():
         param.requires_grad = False
     
     dataset_helper = DataHelper(
