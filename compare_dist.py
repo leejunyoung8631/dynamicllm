@@ -39,6 +39,8 @@ def set_seed(seed):
 def main(args):
     from huggingface_hub import login
     login("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")  
+    
+    set_seed(444)
 
     # Load the LLaMA2 model and tokenizer
     model_name = "meta-llama/Llama-2-7b-chat-hf"  # Or other LLaMA2 variant

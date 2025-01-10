@@ -1,3 +1,8 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import numpy as np
+
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -77,3 +82,40 @@ def get_loaders(name, tokenizer, seq_len=2048, batch_size=8, add_bos_to_every=Fa
         test_dataset, batch_size=batch_size, shuffle=False
     )
     return train_data, test_loader
+
+
+
+
+
+def tokenlayer_table(tokenizer, file="tokeninfo.csv",):
+    index_to_word = {idx: word for word, idx in tokenizer.get_vocab().items()}
+    
+    # read data
+    df = pd.read_csv(file, header=None)  # shape = (length, 32)    
+    value = np.array(df.values.tolist())
+    # value = value.transpose()
+    
+    detokenized_data = np.vectorize(index_to_word.get)(value)
+    
+    # for dd in detokenized_data:
+        # print(dd)
+    # exit()
+    
+    fig, ax = plt.subplots(figsize=(30, 15))
+    ax.axis('off')  # Turn off the axes
+    # ax.axis('tight')  # Fit table within the figure
+
+    # Create the table
+    table = ax.table(cellText=detokenized_data,  # Round values to 2 decimals
+                    loc='center',  # Center the table
+                    cellLoc='center')  # Center text within cells
+
+    # Adjust font size and column width
+    table.auto_set_font_size(False)
+    table.set_fontsize(6)
+    table.auto_set_column_width(col=list(range(value.shape[1])))
+
+    # Show the table
+    plt.show()
+    plt.tight_layout()
+    plt.savefig("./layerwise_prediction.png")
