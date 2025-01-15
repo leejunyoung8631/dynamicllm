@@ -185,20 +185,6 @@ class DataHelper:
                 "train": train_data,
                 "test": test_data
             })
-            # def preprocess_wikitext(example):
-            #             return {
-            #     "text": example["text"]  # Keep the original text column
-            # }
-            # processed_datasets = DatasetDict({
-            #     split: dataset.map(
-            #         preprocess_wikitext, 
-            #         remove_columns=[col for col in dataset.column_names if col != "text"]
-            #     )
-            #     for split, dataset in train_val.items()
-            # })
-            # print(train_val)
-            
-            
             
         else:
             # Other datasets

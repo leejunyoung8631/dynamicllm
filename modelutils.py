@@ -4,17 +4,17 @@ from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForC
 
 
 
-def get_model(base_model, model_name=None, tokenize_name=None, is_decapoda=False):
-    if model_name == None:
-        model_name = AutoModelForCausalLM
+def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=False):
+    if model_class == None:
+        model_class = AutoModelForCausalLM
     if tokenize_name == None:
         tokenize_name = LlamaTokenizer
     
-    
     tokenizer = tokenize_name.from_pretrained(base_model)
-    model = model_name.from_pretrained(base_model, low_cpu_mem_usage=False)
+    model = model_class.from_pretrained(base_model, low_cpu_mem_usage=False)
     
-    model.config.output_hidden_states = True
+    # model.config.output_hidden_states = True
+    model.config.output_hidden_states = False
     model.config.return_dict = True
     
     if is_decapoda == True:
