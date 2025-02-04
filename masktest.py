@@ -3,8 +3,7 @@ import torch.nn as nn
 import torch.nn.init as init
 from torch.nn.functional import gumbel_softmax
 from torch.nn.parameter import Parameter
-import warnings
-from typing import Any, Callable, Optional
+import torch.optim as optim
 
 # from megatron import get_args
 # from megatron.core.tensor_parallel.layers import ColumnParallelLinear, RowParallelLinear, get_tensor_model_parallel_world_size, _initialize_affine_weight_cpu, _initialize_affine_weight_gpu, linear_with_grad_accumulation_and_async_allreduce, set_tensor_model_parallel_attributes, _grad_accum_fusion_available, linear_with_frozen_weight
@@ -198,10 +197,10 @@ class DifferentiableMask(nn.Module):
             print(self.mask_options.shape)
             print("backprop_gate")
             print(backprop_gate.shape)
-            print(backprop_gate)
             
+
             
-            backprop_gate = backprop_gate.reshape(self.initial_mask_size)
+            # backprop_gate = backprop_gate.reshape(self.initial_mask_size)
         else:
             # just based on the maximum logit
             backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), self.gate.argmax(dim=-1)]
@@ -235,12 +234,31 @@ def main():
     
     token = torch.rand((4, 12, 4096), dtype=torch.float).cuda() # b, n, d
     feature = mlp(token) # b, n, 11
+    
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(mlp.parameters(), lr=0.001)
+    
+    
     print("feature")
     print(feature.shape)
     
     back_mask = DifferentiableMask(feature)
     bp = back_mask(feature)
     
+    bp = bp[0]
+    for i in range(10):
+        print(bp[i])
+    
+    v_loss = torch.sum(bp, dim=-1)
+    print(v_loss)
+    logits = torch.mean(v_loss)
+    
+    optimizer.zero_grad()
+    logits.backward()
+    optimizer.step()
+    
+    print("done backprobagataion")
     
     
     
