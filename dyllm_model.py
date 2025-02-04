@@ -78,6 +78,8 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         # do not maak attention 
         # in generation process, skiped layer KV cache will be copied from somewhere
         
+        init_residual = hidden_states
+        
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -106,6 +108,10 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
+        
+        if skip_mask is not None:
+            hidden_states += init_residual * (1.0 - skip_mask[:, self.layer_idx, :]).unsqueeze(-1)
+        
 
         outputs = (hidden_states,)
 
@@ -336,6 +342,7 @@ class DyLLM(LlamaForCausalLM):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
+        # temp         
         original_feature = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -351,7 +358,6 @@ class DyLLM(LlamaForCausalLM):
             skip_mask = None
         )
         original_hidden_state = original_feature[0]
-        
         
         
         # 1. predict layers using n-th features
@@ -375,8 +381,9 @@ class DyLLM(LlamaForCausalLM):
         _, index = torch.max(pred_mask, dim=-1)
         av_num = index.float().mean(dim=-1).mean(dim=-1)
         
-        skip_mask = self.make_mask(index).to("cuda")
-
+        skip_mask = self.make_mask(index).to("cuda") # (b, layer, n_seq)
+        
+        
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         # skip the model
         outputs = self.model(
@@ -403,6 +410,7 @@ class DyLLM(LlamaForCausalLM):
             # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
             logits2 = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
+            
 
         loss = None
         if labels is not None:
@@ -410,15 +418,12 @@ class DyLLM(LlamaForCausalLM):
             loss2 = self.loss_function(logits=logits2, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
         
         
-        
-        
         # L1 = distilation loss
-        d_loss = loss - loss2
-        # L2 = 
+        d_loss = (loss - loss2) / loss
+        # L2 = the number of blocks skipped (average)
         l_loss = av_num / 12
         
         loss = d_loss + l_loss
-            
 
         if not return_dict:
             output = (logits,) + outputs[1:]

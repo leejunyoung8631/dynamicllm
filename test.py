@@ -163,10 +163,10 @@ def create_trainer(
     
 
     callbacks = []
-    eval_callback = LossCallback()
-    callbacks.append(eval_callback)
+    # eval_callback = LossCallback()
+    # callbacks.append(eval_callback)
 
-    trainer = CustomTrainer(
+    trainer = Trainer(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,

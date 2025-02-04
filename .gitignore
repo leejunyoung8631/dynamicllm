@@ -2,6 +2,10 @@
 __pycache__/
 
 
+# dataset cache
+*_dataset
+
+
 # data file
 *.png
 *.csv

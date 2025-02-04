@@ -9,6 +9,8 @@ from torch.utils.data.dataset import Dataset
 
 from datasets import load_dataset
 
+import random
+
 
 
 class IndexDataset(Dataset):
@@ -119,3 +121,14 @@ def tokenlayer_table(tokenizer, file="tokeninfo.csv",):
     plt.show()
     plt.tight_layout()
     plt.savefig("./layerwise_prediction.png")
+    
+    
+
+def set_seed(random_seed=1234):
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.cuda.manual_seed_all(random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(random_seed)
+    random.seed(random_seed)

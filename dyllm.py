@@ -21,13 +21,17 @@ from trainerutil import create_trainer
 
 from dyllm_model import DyLLM
 
+from datautil import set_seed
 
 
 def main(args):
     login("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")  
     
+    # for reproduction
+    set_seed(args.seed)
+    
+    
     base_model = args.base_model
-    print(base_model)
     model, tokenizer = get_model(base_model=base_model, model_class=DyLLM)
     model.to("cuda")
     
@@ -49,7 +53,7 @@ def main(args):
     else:
         train_data, val_data = dataset_helper.create_dataset(
                 args.data_path, args.val_set_size, args.extra_val_dataset,
-                args.cache_dir, args.partial_dir)
+                args.cache_dataset_dir, args.partial_dir)
     
     # Create trainer
     trainer = create_trainer(
@@ -71,6 +75,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    
+    # seed 
+    parser.add_argument("--seed", default=50, type=int)
 
     # Model Type&Path
     parser.add_argument(
@@ -162,6 +169,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Verbose on model structure printing",
     )
+    
+    parser.add_argument('--cache_dataset_dir', type=str, default="./cache_dataset", help='data cache path')
     
     
     args = parser.parse_args()

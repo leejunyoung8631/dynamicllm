@@ -179,8 +179,8 @@ class DataHelper:
                 
         elif data_path == "wikitext":
             from datasets import DatasetDict
-            train_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
-            test_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+            train_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="train", cache_dir=cache_dir)
+            test_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test", cache_dir=cache_dir)
             train_val = DatasetDict({
                 "train": train_data,
                 "test": test_data
