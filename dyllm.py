@@ -29,8 +29,7 @@ def main(args):
     
     # for reproduction
     set_seed(args.seed)
-    
-    
+
     base_model = args.base_model
     model, tokenizer = get_model(base_model=base_model, model_class=DyLLM)
     model.to("cuda")
@@ -38,7 +37,7 @@ def main(args):
     
     # Freeze all base model parameters
     for name, param in model.named_parameters():
-        if "predictor" not in name:
+        if "diff_mask" not in name:
             param.requires_grad = False
     
     dataset_helper = DataHelper(
@@ -61,7 +60,7 @@ def main(args):
             args.num_epochs, args.output_dir,
             show_progress=True, load_best_model=False,
             args=args,
-            custom_eval_save_step=args.detailed_extra)
+            custom_eval_save_step=args.detailed_extra,)
     
     trainer.train()
     

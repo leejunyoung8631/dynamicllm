@@ -47,6 +47,7 @@ def main(args):
     tokenizer = LlamaTokenizer.from_pretrained(model_name)
     model = CustomLlamaForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
     
+    
     model.config.output_hidden_states = True
     model.config.return_dict = True
 

@@ -266,7 +266,35 @@ def main():
 
 
 
+def main2():
+    def make_mask(index):
+        token_mask = None
+        order = [24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12]
+        b, n = index.shape
+        token_mask = torch.ones((b, n+1, 32))
+        for d in range(b):
+            for t in range(n):
+                n_zero = index[d, t]
+                token_mask[d, t+1, order[:n_zero]] = 0
+                
+        # do it to later
+        # token_mask = token_mask.permute(0, 2, 1) # (b, n, 32) -> (b, 32, n)
+        
+        return token_mask
+    
+    
+    index = torch.arange(11).unsqueeze(0)
+    
+    mask = make_mask(index)
+    print(mask)
+    
+    print(mask.sum(dim=-1))
+    
+
+
+
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    main2()

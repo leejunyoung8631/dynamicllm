@@ -5,11 +5,10 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.functional import gumbel_softmax
 
 import numpy as np
 import random
-
-from modelutils import get_model
 
 from transformers import LlamaForCausalLM, LlamaModel
 from transformers import  Trainer
@@ -101,7 +100,7 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         
         # mask FF process to remove the effect of token
         if skip_mask is not None:
-            hidden_states = hidden_states * skip_mask[:, self.layer_idx, :].unsqueeze(-1)
+            hidden_states = hidden_states * skip_mask[:, :, self.layer_idx].unsqueeze(-1)
 
         # Fully Connected
         residual = hidden_states
@@ -110,7 +109,7 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         hidden_states = residual + hidden_states
         
         if skip_mask is not None:
-            hidden_states += init_residual * (1.0 - skip_mask[:, self.layer_idx, :]).unsqueeze(-1)
+            hidden_states += init_residual * (1.0 - skip_mask[:, :, self.layer_idx]).unsqueeze(-1)
         
 
         outputs = (hidden_states,)
@@ -214,11 +213,11 @@ class DyLLMLlama(LlamaModel):
 
         for i, decoder_layer in enumerate(self.layers):
             # temp
-            if skip_mask is not None and i == 0 and skip_mask.shape[1] == 31:
+            if skip_mask is not None and i == 0:
                 continue
             if output_hidden_states and get_first == False:
                 all_hidden_states += (hidden_states,)
-
+            
             if self.gradient_checkpointing and self.training:
                 layer_outputs = self._gradient_checkpointing_func(
                     decoder_layer.__call__,
@@ -291,38 +290,13 @@ class DyLLM(LlamaForCausalLM):
         # new model
         self.model = DyLLMLlama(config)
         
-        # predictor
-        self.predictor = Predictor(d_feature=config.hidden_size)
-        
         # re-init weight as a new model is initialized
         self.post_init()
         
         # for running with mask
         self.run_mask = True
-        self.mask_options = self.make_mask
-    
-    
-    
-    '''
-    # index shape (b, num of token)
-    # index = [[1, 3, 11, 0 ..],   ]represents the number of layers to skip for each token
-    # temp skip order : 24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12
-    '''
-    def make_mask(self, index):
-        # _, index = torch.max(index, dim=-1)
-        
-        token_mask = None
-        order = [24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12]
-        b, n = index.shape
-        token_mask = torch.ones((b, n, self.config.num_hidden_layers))
-        for d in range(b):
-            for t in range(n):
-                n_zero = index[d, t]
-                token_mask[d, t, order[:n_zero]] = 0
-        token_mask = token_mask.permute(0, 2, 1)
-        
-        return token_mask
-    
+        self.skip_level = 11 # later change it with model init
+        self.diff_mask = DifferentiableMask(self.skip_level)
     
     
     def forward_with_mask(self,
@@ -338,7 +312,6 @@ class DyLLM(LlamaForCausalLM):
             return_dict: Optional[bool] = None,
             cache_position: Optional[torch.LongTensor] = None,
             num_logits_to_keep: int = 0,
-            run_mask = False,
             **loss_kwargs,
             ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -382,12 +355,7 @@ class DyLLM(LlamaForCausalLM):
             skip_mask = None
         )
         predict_state = predict_feature[0]
-        pred_mask = self.predictor(predict_state)
-        _, index = torch.max(pred_mask, dim=-1)
-        av_num = index.float().mean(dim=-1).mean(dim=-1)
-        
-        skip_mask = self.make_mask(index).to("cuda") # (b, layer, n_seq)
-        
+        skip_mask = self.diff_mask(predict_state) # b, n, 32
         
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         # skip the model
@@ -414,25 +382,26 @@ class DyLLM(LlamaForCausalLM):
         else:
             # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
-            # logits2 = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
-            
+            # logits2 = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])            
 
         loss = None
-        d_loss = 0
-        l_loss = 0
-        
         if labels is not None:
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             # loss2 = self.loss_function(logits=logits2, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
         
-        # d_loss = (loss - loss2) / loss # L1 = distilation loss
-        l_loss = av_num / 12 # L2 = the number of blocks skipped (average)
+        d_loss = 0 # L1 = distilation loss
+        l_loss = 0 # L2 = the number of blocks skipped (average)
+
+        l_loss =  ( skip_mask - (self.config.num_hidden_layers) ) / (self.skip_level + 1)
+        l_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - self.skip_level) ) / self.skip_level        
+        l_loss = l_loss.mean(dim=-1).mean(dim=-1)
         
         loss = d_loss + l_loss
 
         if not return_dict:
             output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
+        
 
         return CausalLMOutputWithPast(
             loss=loss,
@@ -463,7 +432,7 @@ class DyLLM(LlamaForCausalLM):
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         
         if self.run_mask:
-            self.forward_with_mask(self,
+            return self.forward_with_mask(
                 input_ids,
                 attention_mask,
                 position_ids,
@@ -537,7 +506,8 @@ class Predictor(nn.Module):
         super().__init__()
         self.skip_level = 11 + 1 # 0 skip to 11 skip
         self.predictor = nn.Sequential(
-            nn.Linear(d_feature, self.skip_level)
+            nn.Linear(d_feature, d_feature // 2),
+            nn.Linear(d_feature // 2, self.skip_level),
         )
     
     def forward(self, x, ):
@@ -545,3 +515,111 @@ class Predictor(nn.Module):
         x = self.predictor(x)
         
         return x
+
+
+
+'''
+input : feature from layers 
+output : mask
+
+- predictor
+input : (b, n, d) -> (b, n, num of skipped)
+
+- gumble softmax
+(b, n, num of skipped) -> mask (continuos, approximated)
+
+'''
+class DifferentiableMask(nn.Module):
+    def __init__(
+            self,
+            skip_level = 11,
+            hard=False,
+            temperature=3.0, 
+            scale_multiplier=[1e3, 1e4], 
+        ):
+        '''
+        Implementation of differantiable mask learner
+        args:
+            temperature: temperature of the gumbel distribution
+            gate_param: the parameter to be masked
+            init_prob: initial probability of the mask
+            scale_multiplier: multiplies learned gates by this value, it is needed to make the gates more sensitive to small learning rates
+            initialization: "none" means we start from 0.95 for all and dont bother with initialization, "initial_mask" means we start from the initial mask
+            hard: sampling mask for full gumbel
+            
+        temperature parameter needs more attention, we should do annealing it during training
+        '''
+        super().__init__()
+        
+        
+        # simple parameter setting
+        hard=False 
+        temperature=[4, 0.1]
+        scale_multiplier=[1e3, 1e4]
+    
+        self.mask_difference = 1.0
+        self.temperature = temperature
+        self.scale_multiplier = scale_multiplier
+        
+        # mask setting
+        mask_options = self.make_mask(skip_level=skip_level).cuda()
+        self.register_buffer("mask_options", mask_options)
+        self.hard = hard
+
+        self.current_scale_multiplier = self.scale_multiplier[0]
+        self.current_temperature = self.temperature[0]
+        self.current_max_prob = 0.0
+        
+        # predictor 
+        self.skip_level = skip_level
+        self.mask_predictor = Predictor(skip_level=skip_level)
+        self.iteration = None # This will be set through trainer
+        self.whole_iter = None # This will be set through trainer
+        
+        # turn it false when inference
+        self.training = True
+    
+    
+    
+    def make_mask(self, skip_level):
+        token_mask = None
+        order = [24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12]
+        
+        index = torch.arange(skip_level).unsqueeze(0)
+        b, n = index.shape
+        token_mask = torch.ones((b, skip_level+1, 32))
+        for d in range(b):
+            for t in range(n):
+                n_zero = index[d, t]
+                token_mask[d, t+1, order[:n_zero]] = 0
+                
+        # token_mask = token_mask.permute(0, 2, 1) # (b, n, 32) -> (b, 32, n)
+        
+        return token_mask
+    
+    
+
+    def forward(self, x, ): 
+        # predict the number of skipped using predictor
+        x = self.mask_predictor(x)
+        
+        # predictor as Gumbel parameters
+        gate = x 
+        
+        if self.training:
+            start_temp, end_temp = self.temperature 
+            self.current_temperature = start_temp + (end_temp - start_temp) * (self.iteration / self.whole_iter)
+            start_scale, end_scale = self.scale_multiplier
+            self.current_scale_multiplier = start_scale + (end_scale - start_scale) * (self.iteration / self.whole_iter)
+            
+            sampling_tensor = gate * self.current_scale_multiplier
+            choices = gumbel_softmax(sampling_tensor, tau=self.current_temperature, hard=self.hard)
+            self.current_max_prob = choices.max(-1)[0].mean().item()
+            backprop_gate = (choices @ self.mask_options).squeeze(1)
+        else:
+            # just based on the maximum logit
+            backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), self.gate.argmax(dim=-1)]
+            
+        self.sampled_gate = backprop_gate
+        
+        return backprop_gate

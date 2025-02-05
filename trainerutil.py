@@ -1,9 +1,11 @@
 import csv
 
-
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForCausalLM, LlamaTokenizer
 from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConfig
+
+from dyllm_model import DyLLM
+
 
 
 
@@ -66,7 +68,6 @@ class LossCallback(TrainerCallback):
 
 
 
-
 # class CustomTrainer(Trainer):
 #     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
 #         """
@@ -94,6 +95,30 @@ class LossCallback(TrainerCallback):
 
 
 
+# Iteration to mask module
+class IterationCheckTrainer(Trainer):
+    def training_step(self, model, inputs, num_items_in_batch):
+        # steps
+        current_step = self.state.global_step
+        total_steps = self.state.max_steps
+        
+        if hasattr(model, "diff_mask"):
+            model.diff_mask.iteration = current_step
+            model.diff_mask.whole_iter = total_steps
+
+        # Now call the default implementation
+        return super().training_step(model, inputs)
+
+
+
+Trainer_Mapping = {
+    "iter" : IterationCheckTrainer,
+    "normal" : Trainer,
+}
+
+Callback_Mapping = {
+    "loss" : LossCallback,
+}
 
 
 
@@ -102,7 +127,9 @@ def create_trainer(
         epochs, outdir,
         show_progress, load_best_model,
         args,
-        custom_eval_save_step=None):
+        custom_eval_save_step = None,
+        custom_trainer = None,
+        custom_callback = None):
     gradient_accumulation_steps = args.batch_size // args.micro_batch_size
     fp16_flag = True
     bf16_flag = False
@@ -121,21 +148,42 @@ def create_trainer(
     else:
         eval_steps=None
         evaluation_strategy="no"
-        save_steps=None
+        save_steps=400
         save_total_limit=None
         load_best_model_at_end=False
-        save_strategy="no"
+        save_strategy="steps"
+        
+        
+    if isinstance(model, DyLLM):
+        print("Automatically DyLLM use IterationTrainer")
+        custom_trainer = "iter"    
         
     
-    save_strategy = "steps"
-    save_steps = 400
+    # custom trainer (optional)
+    trainer_class = None
+    if custom_trainer is not None:
+        if custom_trainer not in Trainer_Mapping.keys():
+            print(f"{custom_trainer} is not supported")
+            print("Supported Trainer")
+            print(Trainer_Mapping.keys())
+        trainer_class = Trainer_Mapping[custom_trainer]
+    else: 
+        trainer_class = Trainer_Mapping["normal"]
+        
     
-
+    # add callback (optional)
     callbacks = []
-    # eval_callback = LossCallback()
-    # callbacks.append(eval_callback)
+    if custom_callback is not None:
+        for callback in custom_callback:
+            if callback not in Callback_Mapping.keys():
+                print(f"{callback} is not supported")
+                print("Supported Trainer")
+                print(Callback_Mapping.keys())
+            callbacks.append(Callback_Mapping[callback])
+            
+            
 
-    trainer = Trainer(
+    trainer = trainer_class(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,
