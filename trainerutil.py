@@ -1,70 +1,12 @@
+import os
 import csv
+import numpy as np
 
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForCausalLM, LlamaTokenizer
 from transformers import TrainerCallback, TrainerState, TrainerControl, AutoConfig
 
 from dyllm_model import DyLLM
-
-
-
-
-
-class LossCallback(TrainerCallback):
-    def __init__(self, file_path="loss_log.csv", write_interval=30):
-        """
-        Initialize the callback with a buffer and write interval.
-        """
-        self.file_path = file_path
-        self.write_interval = write_interval
-        self.loss_buffer = []  # Temporary storage for loss data
-        
-        # Ensure the directory exists
-        # os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        # Write the header to the CSV file
-        with open(self.file_path, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["step", "loss"])  # CSV Header
-
-    
-    def on_step_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
-        """
-        Log loss every step in memory and write to the file every `write_interval` steps.
-        """
-        if state.log_history and "loss" in state.log_history[-1]:
-            loss = state.log_history[-1]["loss"]
-            step = state.global_step
-            
-            # Add to buffer
-            self.loss_buffer.append((step, loss))
-            
-            # Write to file if buffer reaches the interval
-            if len(self.loss_buffer) >= self.write_interval:
-                self._flush_buffer()
-                
-    
-    def _flush_buffer(self):
-        """
-        Write buffered loss data to the CSV file and clear the buffer.
-        """
-        if not self.loss_buffer:
-            return  # Nothing to write
-        
-        with open(self.file_path, mode='a', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerows(self.loss_buffer)
-        
-        print(f"Flushed {len(self.loss_buffer)} steps of loss data to {self.file_path}")
-        self.loss_buffer = []  # Clear the buffer
-        
-
-    def on_train_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
-        """
-        Ensure all remaining data is written when training ends.
-        """
-        self._flush_buffer()
-        print("Training finished. All buffered data has been written.")
-
 
 
 
@@ -95,6 +37,45 @@ class LossCallback(TrainerCallback):
 
 
 
+class LossCallback(TrainerCallback):
+    def __init__(self):
+        super().__init__()
+        # We'll store the values in this list
+        self.losses = []
+    
+    def on_step_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
+        # Access the model
+        model = kwargs.get('model', None)
+        
+        mask_loss = getattr(model, "mask_loss", 0)
+        distill_loss = getattr(model, "distill_loss", 0)  
+        ppl_loss = getattr(model, "ppl_loss", 0)  
+        self.losses.append([mask_loss, distill_loss, ppl_loss])
+        
+        current_step = state.global_step
+        path = os.path.join(args.output_dir, "lossfile.npy")
+        if current_step % 100 == 0:
+            path = os.path.join(args.output_dir, "lossfile.npy")
+            np.save(path, np.array(self.losses))
+                
+        return control    
+    
+    
+    def on_train_end(
+        self, 
+        args, 
+        state: TrainerState, 
+        control: TrainerControl, 
+        **kwargs
+    ):
+        path = os.path.join(args.output_dir, "lossfile.npy")
+        np.save(path, np.array(self.losses))
+
+        return control  
+
+
+
+
 # Iteration to mask module
 class IterationCheckTrainer(Trainer):
     def training_step(self, model, inputs, num_items_in_batch):
@@ -108,7 +89,7 @@ class IterationCheckTrainer(Trainer):
 
         # Now call the default implementation
         return super().training_step(model, inputs)
-
+    
 
 
 Trainer_Mapping = {
@@ -181,7 +162,7 @@ def create_trainer(
                 print(Callback_Mapping.keys())
             callbacks.append(Callback_Mapping[callback])
             
-            
+    
 
     trainer = trainer_class(
         model=model,

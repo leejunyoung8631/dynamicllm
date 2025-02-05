@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForC
 from dyllm_model import DyLLM
 
 
-def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=False):
+def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=False, loss_term=None):
     if model_class == None:
         model_class = AutoModelForCausalLM
     if tokenize_name == None:
@@ -21,9 +21,10 @@ def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=Fals
         model.config.bos_token_id = 1
         model.config.eos_token_id = 2
         tokenizer.pad_token_id = 0
-       
-    if model_class == DyLLM:
-        setattr(model, 'skip_level', 11)
+        
     
+    # for calculate loss
+    if loss_term is not None:
+        setattr(model, "loss_term", loss_term.split(","))
     
     return model, tokenizer

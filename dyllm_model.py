@@ -13,11 +13,10 @@ import random
 from transformers import LlamaForCausalLM, LlamaModel
 from transformers import  Trainer
 from transformers.modeling_outputs import CausalLMOutputWithPast, BaseModelOutputWithPast
-
 from transformers.cache_utils import Cache, DynamicCache
-
-
 from transformers.models.llama.modeling_llama import LlamaConfig, LlamaDecoderLayer, LLAMA_ATTENTION_CLASSES, LlamaMLP, LlamaRMSNorm, LlamaRotaryEmbedding
+
+from loss import distillation_loss
 
 
 
@@ -297,7 +296,13 @@ class DyLLM(LlamaForCausalLM):
         self.run_mask = True
         self.skip_level = 11 # later change it with model init
         self.diff_mask = DifferentiableMask(self.skip_level)
-    
+        self.loss_term = "mask"
+        
+        # for callback function
+        self.mask_loss = 0
+        self.distill_loss = 0
+        self.ppl_loss = 0
+        
     
     def forward_with_mask(self,
             input_ids: torch.LongTensor = None,
@@ -319,23 +324,6 @@ class DyLLM(LlamaForCausalLM):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
-        # # temp         
-        # original_feature = self.model(
-        #     input_ids=input_ids,
-        #     attention_mask=attention_mask,
-        #     position_ids=position_ids,
-        #     past_key_values=past_key_values,
-        #     inputs_embeds=inputs_embeds,
-        #     use_cache=use_cache,
-        #     output_attentions=output_attentions,
-        #     output_hidden_states=output_hidden_states,
-        #     return_dict=return_dict,
-        #     cache_position=cache_position,
-        #     get_first = False,
-        #     skip_mask = None
-        # )
-        # original_hidden_state = original_feature[0]
         
         
         # 1. predict layers using n-th features
@@ -373,8 +361,9 @@ class DyLLM(LlamaForCausalLM):
             get_first = False,
             skip_mask = skip_mask,
         )
-
         hidden_states = outputs[0]
+        
+        
         if self.config.pretraining_tp > 1:
             lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
             logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
@@ -382,21 +371,70 @@ class DyLLM(LlamaForCausalLM):
         else:
             # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
-            # logits2 = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])            
 
-        loss = None
-        if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
-            # loss2 = self.loss_function(logits=logits2, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+        loss = 0
+        # if labels is not None:
+            # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            
+            
+        if "mask" in self.loss_term:
+            mask_loss =  ( skip_mask - (self.config.num_hidden_layers) ) / (self.skip_level + 1)
+            mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - self.skip_level) ) / self.skip_level        
+            mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
+            loss = loss + mask_loss
+            self.mask_loss = mask_loss.item() # for callback function   
         
-        d_loss = 0 # L1 = distilation loss
-        l_loss = 0 # L2 = the number of blocks skipped (average)
-
-        l_loss =  ( skip_mask - (self.config.num_hidden_layers) ) / (self.skip_level + 1)
-        l_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - self.skip_level) ) / self.skip_level        
-        l_loss = l_loss.mean(dim=-1).mean(dim=-1)
         
-        loss = d_loss + l_loss
+        if "distill" in self.loss_term:
+            original_feature = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                get_first = False,
+                skip_mask = None
+            )
+            original_hidden_state = original_feature[0]
+            teacher_logits = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
+            student_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            
+            distill_loss = distillation_loss(student_loss=student_loss, student_logits=logits, teacher_logits=teacher_logits, labels=labels)
+            loss = loss + distill_loss
+            self.distill_loss = distill_loss.item()            
+            
+            
+        # loss without ppl
+        if "ppl" in self.loss_term:
+            original_feature = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                get_first = False,
+                skip_mask = None
+            )
+            original_hidden_state = original_feature[0]
+            teacher_logits = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
+            # have to fix it
+            teacher_ppl = self.loss_function(logits=teacher_logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            student_ppl = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            ppl_loss = 0
+            self.ppl_loss = ppl_loss
+            
+            
+            
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -430,6 +468,7 @@ class DyLLM(LlamaForCausalLM):
         num_logits_to_keep: int = 0,
         **loss_kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
+        
         
         if self.run_mask:
             return self.forward_with_mask(

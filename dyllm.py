@@ -26,14 +26,11 @@ from datautil import set_seed
 
 def main(args):
     login("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")  
-    
     # for reproduction
     set_seed(args.seed)
 
-    base_model = args.base_model
-    model, tokenizer = get_model(base_model=base_model, model_class=DyLLM)
+    model, tokenizer = get_model(base_model=args.base_model, model_class=DyLLM, loss_term=args.loss_term)
     model.to("cuda")
-    
     
     # Freeze all base model parameters
     for name, param in model.named_parameters():
@@ -60,7 +57,9 @@ def main(args):
             args.num_epochs, args.output_dir,
             show_progress=True, load_best_model=False,
             args=args,
-            custom_eval_save_step=args.detailed_extra,)
+            custom_eval_save_step=args.detailed_extra,
+            custom_trainer="iter",
+            custom_callback=["loss", ])
     
     trainer.train()
     
@@ -170,6 +169,11 @@ if __name__ == "__main__":
     )
     
     parser.add_argument('--cache_dataset_dir', type=str, default="./cache_dataset", help='data cache path')
+    
+    
+    # additional loss term
+    # mask, distill, ppl
+    parser.add_argument('--loss_term', type=str, default="mask", help='loss function for training')
     
     
     args = parser.parse_args()
