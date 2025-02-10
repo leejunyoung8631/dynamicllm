@@ -302,7 +302,11 @@ class DyLLM(LlamaForCausalLM):
         self.mask_loss = 0
         self.distill_loss = 0
         self.ppl_loss = 0
-        
+    
+    # it will return the mask
+    def get_mask(self, ):
+        return self.diff_mask.mask
+    
     
     def forward_with_mask(self,
             input_ids: torch.LongTensor = None,
@@ -377,11 +381,11 @@ class DyLLM(LlamaForCausalLM):
             # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             
             
-        if "mask" in self.loss_term:
-            mask_loss =  ( skip_mask - (self.config.num_hidden_layers) ) / (self.skip_level + 1)
-            mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - self.skip_level) ) / self.skip_level        
+        if "mask" in self.loss_term: # b, 256, 32
+            mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
             mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
             loss = loss + mask_loss
+            
             self.mask_loss = mask_loss.item() # for callback function   
         
         
@@ -405,8 +409,9 @@ class DyLLM(LlamaForCausalLM):
             student_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             
             distill_loss = distillation_loss(student_loss=student_loss, student_logits=logits, teacher_logits=teacher_logits, labels=labels)
-            loss = loss + distill_loss
-            self.distill_loss = distill_loss.item()            
+            loss = loss + distill_loss * 0.001
+            
+            self.distill_loss = distill_loss.item() * 0.001 # for callback function               
             
             
         # loss without ppl
@@ -427,14 +432,14 @@ class DyLLM(LlamaForCausalLM):
             )
             original_hidden_state = original_feature[0]
             teacher_logits = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
-            # have to fix it
             teacher_ppl = self.loss_function(logits=teacher_logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             student_ppl = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
-            ppl_loss = 0
-            self.ppl_loss = ppl_loss
+            ppl_loss = student_ppl - teacher_ppl
+            loss = loss + ppl_loss
             
+            self.ppl_loss = ppl_loss.item() # for callback function   
             
-            
+
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -543,7 +548,7 @@ fix point (might)
 class Predictor(nn.Module):
     def __init__(self, d_feature=4096, skip_level=11):
         super().__init__()
-        self.skip_level = 11 + 1 # 0 skip to 11 skip
+        self.skip_level = 11 # 0 skip to 11 skip
         self.predictor = nn.Sequential(
             nn.Linear(d_feature, d_feature // 2),
             nn.Linear(d_feature // 2, self.skip_level),
@@ -617,6 +622,9 @@ class DifferentiableMask(nn.Module):
         
         # turn it false when inference
         self.training = True
+        
+        # for debugging -> see callback fucntion
+        self.mask = None
     
     
     
@@ -626,11 +634,11 @@ class DifferentiableMask(nn.Module):
         
         index = torch.arange(skip_level).unsqueeze(0)
         b, n = index.shape
-        token_mask = torch.ones((b, skip_level+1, 32))
+        token_mask = torch.ones((b, skip_level, 32))
         for d in range(b):
             for t in range(n):
                 n_zero = index[d, t]
-                token_mask[d, t+1, order[:n_zero]] = 0
+                token_mask[d, t, order[:n_zero]] = 0
                 
         # token_mask = token_mask.permute(0, 2, 1) # (b, n, 32) -> (b, 32, n)
         
@@ -655,6 +663,8 @@ class DifferentiableMask(nn.Module):
             choices = gumbel_softmax(sampling_tensor, tau=self.current_temperature, hard=self.hard)
             self.current_max_prob = choices.max(-1)[0].mean().item()
             backprop_gate = (choices @ self.mask_options).squeeze(1)
+            
+            self.mask = backprop_gate.clone().detach().cpu().numpy()
         else:
             # just based on the maximum logit
             backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), self.gate.argmax(dim=-1)]

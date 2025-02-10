@@ -10,6 +10,8 @@ from torch.utils.data.dataset import Dataset
 from datasets import load_dataset
 
 import random
+import json
+import csv
 
 
 
@@ -132,3 +134,49 @@ def set_seed(random_seed=1234):
     torch.backends.cudnn.benchmark = False
     np.random.seed(random_seed)
     random.seed(random_seed)
+    
+
+
+def convert_json2csv_zeroshot(json_path, csv_path):
+    with open(json_path, "r") as file:
+        data = json.load(file)
+
+    select_key = {
+        "boolq": "acc",
+        "piqa": "acc",
+        "hellaswag": "acc_norm",
+        "winogrande": "acc",
+        "arc_easy": "acc",
+        "arc_challenge": "acc_norm",
+        "openbookqa": "acc_norm",
+    }
+
+    list_task = []
+    list_metric = []
+    list_score = []
+
+    ave_score = 0
+    with open(csv_path, "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        for name, key in select_key.items():
+            if name not in data["results"]:
+                continue
+
+            list_task.append(name)
+            list_metric.append(key)
+
+            score = data["results"][name][key] * 100
+            list_score.append(score)
+            ave_score += score
+
+        ave_score /= len(list_score)
+
+        list_task.append("AVE")
+        list_metric.append("n/a")
+        list_score.append(ave_score)
+
+        writer.writerow(list_task)
+        writer.writerow(list_metric)
+        writer.writerow(list_score)
+
+    print(csv_path)

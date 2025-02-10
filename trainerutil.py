@@ -40,13 +40,16 @@ from dyllm_model import DyLLM
 class LossCallback(TrainerCallback):
     def __init__(self):
         super().__init__()
-        # We'll store the values in this list
+        
+        # for debugging
         self.losses = []
+        self.masks = []
     
     def on_step_end(self, args, state: TrainerState, control: TrainerControl, **kwargs):
         # Access the model
         model = kwargs.get('model', None)
         
+        # saving loss
         mask_loss = getattr(model, "mask_loss", 0)
         distill_loss = getattr(model, "distill_loss", 0)  
         ppl_loss = getattr(model, "ppl_loss", 0)  
@@ -57,6 +60,17 @@ class LossCallback(TrainerCallback):
         if current_step % 100 == 0:
             path = os.path.join(args.output_dir, "lossfile.npy")
             np.save(path, np.array(self.losses))
+        
+        
+        # it will save the token mask from the half index (only first batch)
+        if current_step % 50 == 0:
+            token_mask = model.get_mask()
+            if token_mask is not None:
+                b, n, l = token_mask.shape
+                self.masks.append(token_mask[0, n // 2, :])
+                mask_path = os.path.join(args.output_dir, "token_mask.npy")
+                np.save(mask_path, np.array(self.masks))
+        
                 
         return control    
     

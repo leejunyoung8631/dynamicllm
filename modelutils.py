@@ -16,15 +16,26 @@ def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=Fals
     model.config.output_hidden_states = False
     model.config.return_dict = True
     
+    
     if is_decapoda == True:
         model.config.pad_token_id = 0
         model.config.bos_token_id = 1
         model.config.eos_token_id = 2
         tokenizer.pad_token_id = 0
         
-    
+      
     # for calculate loss
     if loss_term is not None:
         setattr(model, "loss_term", loss_term.split(","))
     
     return model, tokenizer
+
+
+
+def set_inference(model, weight_file):
+    
+    
+    
+    
+    
+    return
