@@ -1,3 +1,8 @@
+import os 
+import torch
+
+from safetensors.torch import load_file
+
 import transformers
 from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForCausalLM, LlamaTokenizer
 
@@ -31,11 +36,24 @@ def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=Fals
     return model, tokenizer
 
 
+def load_mask_weight(model, weight_file):
+    # mask weight is saved at "model-00006-of-00006.safetensors"    
+    weight_file = os.path.join(weight_file, "model-00006-of-00006.safetensors")
+    model_dict = load_file(weight_file)
+    
+    # filter only mask weight
+    mask_weight = {k: v for k, v in model_dict.items() if "diff_mask" in k}
+    
+    model.load_state_dict(mask_weight, strict=False)
+    
+    
+    return model
 
-def set_inference(model, weight_file):
+
+
+def set_inference(model, ):
+    # set inference mode for mask
+    model.diff_mask.training = False
     
+    return model
     
-    
-    
-    
-    return

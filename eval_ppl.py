@@ -12,7 +12,12 @@ import numpy as np
 import torch
 from dataset import get_loaders
 from tqdm import tqdm
-from utils import count_params, get_model, set_seed
+
+from dyllm_model import DyLLM
+from datautil import set_seed
+from modelutils import get_model
+from modelutils import load_mask_weight, set_inference
+
 
 
 @torch.no_grad()
@@ -52,9 +57,6 @@ def eval_ppl(
     n_partial_batch=None
 ):
     filename = "ppl_bos.csv" if add_bos_to_every else "ppl.csv"
-    csv_log_path = None
-    if output_dir is not None:
-        csv_log_path = os.path.join(output_dir, filename)
     csv_header = []
     csv_value = []
     metric = {}
@@ -71,67 +73,8 @@ def eval_ppl(
         csv_header.append(f"ppl_{dataset}")
         csv_value.append(metric[dataset])
 
-    mem = torch.cuda.memory_allocated() / 1024 / 1024
-    print(f"Current GPU memory occupied: {mem} MiB")
-    nparams = count_params(model)
-    print(f"Params: {nparams}")
-
-    if csv_log_path is not None:
-        with open(csv_log_path, "w") as logfile:
-            logwriter = csv.writer(logfile, delimiter=",")
-            logwriter.writerow(csv_header + ["params", "mem"])
-            logwriter.writerow(csv_value + [nparams, mem])
-
     return csv_value
 
-
-def generate_txt(
-    output_dir,
-    model,
-    tokenizer,
-    input_prompt="The Leaning Tower of Pisa is known for",
-    num_output=5,
-    top_k=50,
-    top_p=0.95,
-    temperature=1.0,
-    max_seq_len=128,
-    device="cuda",
-):
-    # generate a few samples
-    txt_path = os.path.join(output_dir, "gen_text.txt")
-    inputs = tokenizer(input_prompt, return_tensors="pt")["input_ids"].to(device)
-    input_len = inputs[0].size(0)
-
-    with open(txt_path, "w", encoding="utf8") as f:
-        f.write("=== input ===\n")
-        f.write(f"{input_prompt}\n")
-
-    for i in range(num_output):
-        with torch.no_grad():
-            generation_output = model.generate(
-                input_ids=inputs,
-                do_sample=True,
-                top_k=top_k,
-                top_p=top_p,
-                temperature=temperature,
-                max_length=(input_len + max_seq_len),
-                min_length=(
-                    input_len + max_seq_len
-                ),  # forced output length (to avoid <EOS> sampling)
-                return_dict_in_generate=True,
-            )
-        s = generation_output.sequences[0]
-        output_len = len(s)
-        output = tokenizer.decode(s)
-
-        print(f"=== output {i} | leng gen {output_len-input_len} + input {input_len}\n")
-        print(output)
-
-        with open(txt_path, "a", encoding="utf8") as f:
-            f.write(
-                f"=== output {i} | leng gen {output_len-input_len} + input {input_len}\n"
-            )
-            f.write(f"{output}\n")
 
 
 if __name__ == "__main__":
@@ -171,24 +114,26 @@ if __name__ == "__main__":
         help="fix tokenizer config of baffo32/decapoda-research-llama-7B-hf",
     )
     parser.add_argument("--use_bfloat", default=False, action="store_true")
+    
+    parser.add_argument("--loss_term", default="mask")
+    parser.add_argument("--mask_weight", default="./baffo32/decapoda-research-llama-7B-hf")
+    
     args = parser.parse_args()
-
+    
+    from huggingface_hub import login
+    login("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")  
+    
     set_seed(args.seed)
-    model, tokenizer, description = get_model(
-        base_model=args.base_model,
-        ckpt=args.ckpt,
-        lora_ckpt=args.lora_ckpt,
-        tokenizer=args.tokenizer,
-        model_type=args.model_type,
-        device=args.device,
-        fix_decapoda_config=args.fix_decapoda_config,
-        use_bfloat=args.use_bfloat,
-    )
+    model, tokenizer = get_model(base_model=args.base_model, model_class=DyLLM, loss_term=args.loss_term)    
+    model = load_mask_weight(model, args.mask_weight)
+    model = set_inference(model)
+    model = model.cuda()
+
 
     os.makedirs(args.output_dir, exist_ok=True)
-    for add_bos_to_every in [True, False]:
+    for add_bos_to_every in [False]:
         eval_ppl(
-            output_dir=args.output_dir,
+            output_dir=os.path.dirname(args.mask_weight),
             model=model,
             tokenizer=tokenizer,
             datasets=["wikitext2", "ptb"],
@@ -196,6 +141,7 @@ if __name__ == "__main__":
             device=args.device,
             add_bos_to_every=add_bos_to_every,
         )
+    
     #generate_txt(
     #    output_dir=args.output_dir,
     #    model=model,

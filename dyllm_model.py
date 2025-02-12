@@ -667,7 +667,7 @@ class DifferentiableMask(nn.Module):
             self.mask = backprop_gate.clone().detach().cpu().numpy()
         else:
             # just based on the maximum logit
-            backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), self.gate.argmax(dim=-1)]
+            backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), gate.argmax(dim=-1)]
             
         self.sampled_gate = backprop_gate
         
