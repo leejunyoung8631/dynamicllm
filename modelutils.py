@@ -43,6 +43,7 @@ def load_mask_weight(model, weight_file):
     
     # filter only mask weight
     mask_weight = {k: v for k, v in model_dict.items() if "diff_mask" in k}
+    print(f"loaded weight names: {mask_weight.keys()}")
     
     model.load_state_dict(mask_weight, strict=False)
     
@@ -51,9 +52,12 @@ def load_mask_weight(model, weight_file):
 
 
 
-def set_inference(model, ):
+def set_inference(model, is_generation=False):
     # set inference mode for mask
     model.diff_mask.training = False
+    
+    if is_generation:
+        model.generation_skip = True
     
     return model
     

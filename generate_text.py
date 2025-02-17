@@ -32,8 +32,6 @@ def generate_txt(
     txt_path = os.path.join(output_dir, "gen_text.txt")
     inputs = tokenizer(input_prompt, return_tensors="pt")["input_ids"].to(device)
     input_len = inputs[0].size(0)
-    
-    exit()
 
     with open(txt_path, "w", encoding="utf8") as f:
         f.write("=== input ===\n")
@@ -110,6 +108,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--loss_term", default="mask")
     parser.add_argument("--mask_weight", default="./baffo32/decapoda-research-llama-7B-hf")
+    parser.add_argument("--is_generation", action="store_true")
     
     args = parser.parse_args()
     
@@ -119,7 +118,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     model, tokenizer = get_model(base_model=args.base_model, model_class=DyLLM, loss_term=args.loss_term)    
     model = load_mask_weight(model, args.mask_weight)
-    model = set_inference(model)
+    model = set_inference(model, )
     model = model.cuda()
     
     
