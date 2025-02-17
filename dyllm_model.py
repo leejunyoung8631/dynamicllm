@@ -408,12 +408,20 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
     
     
+    # 0 for key state
+    # 1 for value state
     def duplicate_skip_cache(self, past_key_value):
-        print(past_key_value.shape)
-        exit()
+        # strategy 1 : copy the last KV cache state to current kv cache state
+        _, _ = past_key_value.update(past_key_value[self.layer_idx][0][:, :, -1, :].unsqueeze(2), 
+                                     past_key_value[self.layer_idx][1][:, :, -1, :].unsqueeze(2), 
+                                     self.layer_idx, {})
+        print(self.layer_idx)
+        print(past_key_value[self.layer_idx][0].shape)
+        print(past_key_value[self.layer_idx][1].shape)
+        print("\n")
         
         
-        return
+        return (past_key_value, )
         
 
 
@@ -422,7 +430,7 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[1] = None,
+        past_key_value: Optional[Cache] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
@@ -461,14 +469,22 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         # do not maak attention 
         # in generation process, skiped layer KV cache will be copied from somewhere
         
+        # if skip_mask is not None:
+        #     print(skip_mask.shape)
+        #     print(skip_mask)
         
         # in generation process, it will just return its input
         # 1. generation process
         # 2. exception for given input sentence
         # 3. skip_mask
         if (is_generate) and (skip_mask.shape[1] == 1) and (skip_mask[:, :, self.layer_idx] == 0):
-            self.duplicate_skip_cache()
-            return hidden_states
+            outputs = (hidden_states, )
+            present_key_value = self.duplicate_skip_cache(past_key_value=past_key_value)
+            
+            if use_cache:
+                outputs += (present_key_value, )
+            
+            return outputs
         
         
         init_residual = hidden_states

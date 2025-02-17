@@ -118,7 +118,8 @@ if __name__ == "__main__":
     set_seed(args.seed)
     model, tokenizer = get_model(base_model=args.base_model, model_class=DyLLM, loss_term=args.loss_term)    
     model = load_mask_weight(model, args.mask_weight)
-    model = set_inference(model, )
+    model = set_inference(model, args.is_generation)
+    model = model.half()
     model = model.cuda()
     
     
