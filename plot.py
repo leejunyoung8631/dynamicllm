@@ -34,7 +34,7 @@ def plot_loss(filepath, savepath):
     plt.figure(figsize=(15, 10))
     for i in range(c):
         plt.plot(x, data[:, i], label=name[i])
-    plt.ylim(0, 4)
+    plt.ylim(0, 1.5)
     plt.legend(fontsize = 16)
     plt.savefig(savepath)
     
@@ -46,7 +46,7 @@ def plot_loss(filepath, savepath):
 import os
 
 def main():
-    target_path = "weight/dyllm_test_5"
+    target_path = "weight/dyllm_test_7"
     
     mask_path = os.path.join(target_path, "token_mask.npy")
     loss_path = os.path.join(target_path, "lossfile.npy")
@@ -58,11 +58,6 @@ def main():
     
     plot_mask(mask_path, save_mask)
     plot_loss(loss_path, loss_save)
-    
-    
-    
-    
-    
     
     
     return

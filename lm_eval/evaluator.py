@@ -70,6 +70,7 @@ def simple_evaluate(
 
     assert tasks != [], "No tasks specified"
 
+    # <lm_eval.models.huggingface.AutoCausalLM object at 0x7bba40064880>
     if isinstance(model, str):
         if model_args is None:
             model_args = ""
@@ -77,6 +78,7 @@ def simple_evaluate(
             model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
         )
     elif isinstance(model, transformers.PreTrainedModel):
+        
         lm = lm_eval.models.get_model("hf-causal")(
                 pretrained=model,
                 batch_size=batch_size,

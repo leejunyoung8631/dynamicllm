@@ -4,6 +4,7 @@ __pycache__/
 
 # dataset cache
 *_dataset
+lm_cache
 
 
 # data file
@@ -11,6 +12,7 @@ __pycache__/
 *.csv
 *.txt
 *.npy
+results/
 
 # weight file
 here/

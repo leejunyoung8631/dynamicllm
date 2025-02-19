@@ -19,8 +19,6 @@ from huggingface_hub import login
 from datahelper import DataHelper
 from trainerutil import create_trainer
 
-from dyllm_model import DyLLM
-
 from datautil import set_seed
 
 
@@ -29,7 +27,7 @@ def main(args):
     # for reproduction
     set_seed(args.seed)
 
-    model, tokenizer = get_model(base_model=args.base_model, model_class=DyLLM, loss_term=args.loss_term)
+    model, tokenizer = get_model(base_model=args.base_model, model_class=args.model_class, loss_term=args.loss_term)
     model.to("cuda")
     
     # Freeze all base model parameters
@@ -83,6 +81,12 @@ if __name__ == "__main__":
         type=str,
         default="output_tune/llama-1-7b/ppl_n10/rm_6_blocks_lora_merge_fp16",
         help="base model name",
+    )
+    parser.add_argument(
+        "--model_class",
+        type=str,
+        default="dyllm",
+        help="chosse in [dyllm, ...]",
     )
     parser.add_argument("--device", type=str, default="cuda", help="device")
     parser.add_argument(

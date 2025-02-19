@@ -410,15 +410,12 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
     
     # 0 for key state
     # 1 for value state
+    # past_key_value : Cache object
     def duplicate_skip_cache(self, past_key_value):
         # strategy 1 : copy the last KV cache state to current kv cache state
         _, _ = past_key_value.update(past_key_value[self.layer_idx][0][:, :, -1, :].unsqueeze(2), 
                                      past_key_value[self.layer_idx][1][:, :, -1, :].unsqueeze(2), 
                                      self.layer_idx, {})
-        print(self.layer_idx)
-        print(past_key_value[self.layer_idx][0].shape)
-        print(past_key_value[self.layer_idx][1].shape)
-        print("\n")
         
         
         return (past_key_value, )
@@ -468,11 +465,8 @@ class DynLlamaDecoderLayer(LlamaDecoderLayer):
         '''        
         # do not maak attention 
         # in generation process, skiped layer KV cache will be copied from somewhere
-        
-        # if skip_mask is not None:
-        #     print(skip_mask.shape)
-        #     print(skip_mask)
-        
+
+
         # in generation process, it will just return its input
         # 1. generation process
         # 2. exception for given input sentence
@@ -710,7 +704,7 @@ class DyLLM(LlamaForCausalLM):
         self.run_mask = True
         self.skip_level = 11 # later change it with model init
         self.diff_mask = DifferentiableMask(self.skip_level)
-        self.loss_term = "mask"
+        self.loss_term = []
         
         # for callback function
         self.mask_loss = 0
@@ -719,6 +713,10 @@ class DyLLM(LlamaForCausalLM):
         
         # for generation skip
         self.generation_skip = False
+        
+        # for checking the number of blocks it skipped
+        self.check_count = False
+        self.skip_count = []
     
     # it will return the mask
     def get_mask(self, ):
@@ -770,6 +768,7 @@ class DyLLM(LlamaForCausalLM):
         )
         predict_state = predict_feature[0]
         skip_mask = self.diff_mask(predict_state) # b, n, 32
+                
         
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         # skip the model
@@ -806,9 +805,9 @@ class DyLLM(LlamaForCausalLM):
             
         if "mask" in self.loss_term: # b, l, 32
             mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
+            mask_loss = (mask_loss - 0.5) ** 2
             mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
             loss = loss + mask_loss
-            
             self.mask_loss = mask_loss.item() # for callback function   
         
         
@@ -861,8 +860,13 @@ class DyLLM(LlamaForCausalLM):
             loss = loss + ppl_loss
             
             self.ppl_loss = ppl_loss.item() # for callback function   
+        
+        
+        if self.check_count:
+            skip_mask_count = skip_mask.clone()
+            zero_count = (skip_mask_count == 0).sum(dim=2).reshape(-1)
+            self.skip_count.extend(zero_count.cpu().numpy().tolist())
             
-
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -1224,7 +1228,7 @@ class DifferentiableMask(nn.Module):
         self.whole_iter = None # This will be set through trainer
         
         # turn it false when inference
-        self.training = True
+        self.training = False
         
         # for debugging -> see callback fucntion
         self.mask = None

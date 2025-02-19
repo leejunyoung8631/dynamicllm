@@ -8,10 +8,17 @@ from transformers import AutoTokenizer, LlamaForCausalLM, Trainer, AutoModelForC
 
 from dyllm_model import DyLLM
 
+MODEL_MAPPING = {
+    "dyllm" : DyLLM,
+}
 
-def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=False, loss_term=None):
-    if model_class == None:
+
+def get_model(base_model, model_class="normal", tokenize_name=None, is_decapoda=False, loss_term=None):
+    if model_class == "normal":
         model_class = AutoModelForCausalLM
+    else: 
+        model_class = MODEL_MAPPING[model_class]
+        
     if tokenize_name == None:
         tokenize_name = LlamaTokenizer
     
@@ -33,10 +40,17 @@ def get_model(base_model, model_class=None, tokenize_name=None, is_decapoda=Fals
     if loss_term is not None:
         setattr(model, "loss_term", loss_term.split(","))
     
+    
+        
+    
     return model, tokenizer
 
 
 def load_mask_weight(model, weight_file):
+    if weight_file is None:
+        print("no weight file")
+        return model
+    
     # mask weight is saved at "model-00006-of-00006.safetensors"    
     weight_file = os.path.join(weight_file, "model-00006-of-00006.safetensors")
     model_dict = load_file(weight_file)
@@ -52,12 +66,18 @@ def load_mask_weight(model, weight_file):
 
 
 
-def set_inference(model, is_generation=False):
+def set_inference(model, args):
     # set inference mode for mask
-    model.diff_mask.training = False
+    if hasattr(model, "diff_mask"):
+        model.diff_mask.training = False
     
-    if is_generation:
+    if args.is_generation:
         model.generation_skip = True
+    
+    if args.check_count:
+        model.check_count = True
+    
+    model.eval()
     
     return model
     
