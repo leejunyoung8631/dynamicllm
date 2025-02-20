@@ -139,35 +139,6 @@ if __name__ == "__main__":
     model = load_mask_weight(model, args.mask_weight)
     model = set_inference(model, args)
     model = model.cuda()
-    
-
-    
-    
-    # index = torch.tensor([[    1, 29871,    13,    13,   353,  4755,   350,  5059,   357,   353,
-    #      29871,    13,    13,    13,    13,    13,  4755,   350,  5059,   357,
-    #        338,   385,  4223,  2706,  1919, 11456,   322, 24520, 11339,   869,
-    #        940,   750,   263, 17838,   732, 29899, 29992,   380, 23693,  6297,
-    #        373,   278, 11456,  3652,   450,  6682,   297, 29871, 29906, 29900,
-    #      29900, 29900,   869,   910,   471,  5643,   491,   263,   380, 23693,
-    #       6297,   297,   278,  1708,  2439,   787,  3971,   491, 11254, 27265,
-    #        575,  1919,   607,   471,  8560,   297, 29871, 29906, 29900, 29900,
-    #      29896,   472,   278,  7021,  9245, 15521,   869,   940,   750,   263,
-    #      17838,  6297,   297,   278, 11456,  3652, 26817,  2259,   897,   287,
-    #        297, 29871, 29906, 29900, 29900, 29906,   869,   512, 29871, 29906,
-    #      29900, 29900, 29946,   350,  5059,   357,  2982,   287,   263,  6297,
-    #        408,   376, 28050,   376,   297,   278, 12720,   376]],
-    #    device='cuda:0')
-
-    # tokens = [tokenizer.decode([tok]) for tok in index[0].tolist()]
-
-    # # Print token-by-token output
-    # for i, tok in enumerate(tokens):
-    #     print(f"Token {i}: {repr(tok)}")
-
-    
-    
-    
-    
 
     os.makedirs(args.output_dir, exist_ok=True)
     for add_bos_to_every in [False]:
@@ -184,6 +155,11 @@ if __name__ == "__main__":
     
     if args.check_count:
         print(f"the number of skipped blocks : {np.mean(model.skip_count)}")
+    
+    
+    
+    # from modelutils import debug_info
+    # debug_info
     
     #generate_txt(
     #    output_dir=args.output_dir,

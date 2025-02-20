@@ -80,4 +80,19 @@ def set_inference(model, args):
     model.eval()
     
     return model
+
+
+def debug_info(model, output_file):
     
+    
+    
+    
+    
+    
+    
+    return
+
+
+
+
+
