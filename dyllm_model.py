@@ -1204,7 +1204,6 @@ class DifferentiableMask(nn.Module):
         
         
         # simple parameter setting
-        hard=False 
         temperature=[4, 0.1]
         scale_multiplier=[1e3, 1e4]
     

@@ -14,7 +14,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast, BaseModelOutpu
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.models.llama.modeling_llama import LlamaConfig, LlamaDecoderLayer, LLAMA_ATTENTION_CLASSES, LlamaMLP, LlamaRMSNorm, LlamaRotaryEmbedding
 
-from modelutils import get_model
+from modelutils import get_model, set_training, set_inference
 from huggingface_hub import login
 from datahelper import DataHelper
 from trainerutil import create_trainer
@@ -28,6 +28,7 @@ def main(args):
     set_seed(args.seed)
 
     model, tokenizer = get_model(base_model=args.base_model, model_class=args.model_class, loss_term=args.loss_term)
+    model = set_training(model, args)
     model.to("cuda")
     
     # Freeze all base model parameters

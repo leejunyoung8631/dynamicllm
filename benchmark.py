@@ -5,12 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-import datetime
 import json
-import os
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
-import logging
 
 import torch
 import transformers
@@ -45,7 +42,27 @@ from self_speculation.self_speculation_generator import SelfSpeculativeGeneratio
 import arguments
 from arguments import Arguments, simple_parse_args_string
 
-log = logging.getLogger(__name__)
+
+
+import argparse
+import json
+import random
+
+import numpy as np
+import torch
+from tqdm import tqdm
+
+from datautil import set_seed
+from modelutils import get_model
+from modelutils import load_mask_weight, set_inference
+
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+from datasets import load_dataset
+import pandas as pd
+
 
 
 
@@ -125,7 +142,7 @@ class ROUGEScoreWrapper(WrapperMetric):
 
 @dataclass
 class BenchmarkArguments:
-    dataset: str
+    dataset: Optional[str] = None
     data_path: Optional[str] = None
     random_shuffle: bool = True
     num_samples: Optional[int] = None
@@ -257,6 +274,7 @@ def benchmark(
         tokenizer=tokenizer, model=model, generation_strategy=generation_strategy
     )
 
+    # input, output
     evaluation_set = get_data(
         random_shuffle=benchmark_arguments.random_shuffle,
         num_samples=benchmark_arguments.num_samples,
@@ -266,6 +284,8 @@ def benchmark(
         data_path=benchmark_arguments.data_path,
         template=benchmark_arguments.template,
     )
+    
+    
     metrics = EvaluationMetrics.build_metrics()
     for i, example in enumerate(tqdm(evaluation_set)):
         response: GenerationResult = generator.generate(
@@ -287,35 +307,6 @@ def benchmark(
 
     return metric_result
 
-
-
-import argparse
-import csv
-import os
-import time
-
-import numpy as np
-import torch
-from dataset import get_loaders
-from tqdm import tqdm
-
-from datautil import set_seed
-from modelutils import get_model
-from modelutils import load_mask_weight, set_inference
-
-
-
-
-
-
-
-import json
-import random
-from dataclasses import dataclass
-from typing import Dict, List, Optional
-
-from datasets import load_dataset
-import pandas as pd
 
 
 
@@ -490,6 +481,7 @@ def prepare_custom(data_path: str, prompt_field: str = "prompt", response_field:
     return evaluation_data_points
 
 
+
 def get_data(
     random_shuffle: bool,
     num_samples: int,
@@ -537,7 +529,7 @@ def get_data(
 
 def process_cli_arguments() -> Tuple[arguments.Arguments, BenchmarkArguments, GenerationConfig]:
     parser = transformers.HfArgumentParser((arguments.Arguments, BenchmarkArguments, GenerationConfig))
-    general_arguments, benchmark_arguments, generation_config = parser.parse_args_into_dataclasses(return_remaining_strings=False)
+    general_arguments, benchmark_arguments, generation_config, _ = parser.parse_args_into_dataclasses(return_remaining_strings=True)
 
     assert benchmark_arguments.dataset in get_valid_dataset_formats(), f"{benchmark_arguments.dataset} is not a supported dataset!"
     
@@ -567,6 +559,12 @@ if __name__ == "__main__":
         type=str,
         default="baffo32/decapoda-research-llama-7B-hf",
         help="base model name",
+    )
+    parser.add_argument(
+        "--model_class",
+        type=str,
+        default="dyllm",
+        help="chosse in [dyllm, ...]",
     )
     parser.add_argument(
         "--tokenizer", type=str, default=None, help="if None, base model name is used"
@@ -600,7 +598,17 @@ if __name__ == "__main__":
     
     parser.add_argument("--loss_term", default="mask")
     parser.add_argument("--mask_weight", default="./baffo32/decapoda-research-llama-7B-hf")
-    parser.add_argument("--is_generation", action="store_true")
+    parser.add_argument("--is_generation", action="store_true", default=False)
+    
+    parser.add_argument("--check_count", action="store_true", help="if True, check the number of skipped blocks")
+    
+    # for benchmark dataset
+    parser.add_argument("--dataset", default="cnn_dm_summarization",)
+    parser.add_argument("--num_samples", default=100, type=int)
+    
+    
+    # for general args, not used but for code compatibility
+    parser.add_argument("--model", default="dummy_text",)
     
     args = parser.parse_args()
     
@@ -613,24 +621,13 @@ if __name__ == "__main__":
     set_seed(args.seed)
     model, tokenizer = get_model(base_model=args.base_model, model_class="dyllm", loss_term=args.loss_term)    
     model = load_mask_weight(model, args.mask_weight)
-    model = set_inference(model, args.is_generation)
+    model = set_inference(model, args)
     model = model.cuda()
     
     _, benchmark_arguments, generation_config = process_cli_arguments()
-    print(benchmark_arguments)
-    print(generation_config)
-    exit()
+    
     metric_result = benchmark(model, tokenizer, benchmark_arguments, generation_config)
     print(metric_result)
-    
-    
-    
-    evaluate_data = get_data(
-        random_shuffle=True,
-        num_samples=100,
-        dataset="cnn_dm_summarization",
-        n_shot=0,
-    )
-    
-    print(len(evaluate_data))
 
+    if args.check_count:
+        print(f"the number of skipped blocks : {np.mean(model.skip_count)}")

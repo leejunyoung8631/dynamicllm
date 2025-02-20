@@ -82,6 +82,18 @@ def set_inference(model, args):
     return model
 
 
+def set_training(model, args):
+    # set inference mode for mask
+    if hasattr(model, "diff_mask"):
+        model.diff_mask.training = True
+        model.diff_mask.hard = True
+    
+    
+    
+    return model
+    
+
+
 def debug_info(model, output_file):
     
     

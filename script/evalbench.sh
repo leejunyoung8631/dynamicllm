@@ -1,0 +1,3 @@
+# CUDA_VISIBLE_DEVICES=3 python benchmark.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight weight/dyllm_test_7/checkpoint-800 --check_count --dataset cnn_dm_summarization --model dummy_text --num_samples 100
+
+CUDA_VISIBLE_DEVICES=1 python rouge.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight weight/dyllm_test_7/checkpoint-800 --check_count --dataset cnn_dm_summarization --model dummy_text --num_samples 100
