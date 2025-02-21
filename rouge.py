@@ -1,4 +1,6 @@
 import argparse
+import os
+import json
 
 import torch
 
@@ -50,7 +52,7 @@ def main():
     parser.add_argument("--top_k", type=float, default=50)
     parser.add_argument("--temperature", type=float, default=1)
     parser.add_argument("--max_seq_len", type=int, default=128)
-    parser.add_argument("--output_dir", type=str, default="results/llama-7b-hf/ppl")
+    parser.add_argument("--output_dir", type=str)
     parser.add_argument(
         "--fix_decapoda_config",
         default=False,
@@ -122,26 +124,32 @@ def main():
         
         return summary
     
-        
+    
+    output_data = []
     predictions = []
     references = []
 
     for example in dataset[:5]:
-        article_text = example["input"]
-        reference_summary = example["output"]  # This is the gold reference
+        article_text = example.input
+        reference_summary = example.output  # This is the gold reference
 
         # Generate your model’s summary
         generated_summary = generate_summary(model, tokenizer, prompt=article_text)
         
         predictions.append(generated_summary)
         references.append(reference_summary)
+        output_data.append({"article" : article_text,
+                            "reference" : reference_summary,
+                            "prediction" : generated_summary}
+                           )
+    
+    
+    # save output
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(os.path.join(args.output_dir, "summary.json"), "w", encoding="utf-8") as f:
+        json.dump(output_data, f, indent=4, ensure_ascii=False)
         
     
-    print(predictions[0])
-    print(references[0])
-
-    exit()        
-        
     
     scorer = rouge_scorer.RougeScorer(
         ["rouge1", "rouge2", "rouge3", "rougeL"], 
@@ -167,3 +175,8 @@ def main():
     print("Average ROUGE-2 F1:", mean(rouge2_scores))
     print("Average ROUGE-3 F1:", mean(rouge3_scores))
     print("Average ROUGE-L F1:", mean(rougeL_scores))
+    
+
+
+if __name__ == "__main__":
+    main()
