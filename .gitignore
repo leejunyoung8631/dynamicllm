@@ -13,6 +13,7 @@ lm_cache
 *.txt
 *.npy
 results/
+*.json
 
 # weight file
 here/
