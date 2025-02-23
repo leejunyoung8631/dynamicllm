@@ -143,7 +143,7 @@ def create_trainer(
     else:
         eval_steps=None
         evaluation_strategy="no"
-        save_steps=400
+        save_steps=200
         save_total_limit=None
         load_best_model_at_end=False
         save_strategy="steps"

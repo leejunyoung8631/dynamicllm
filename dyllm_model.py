@@ -805,7 +805,7 @@ class DyLLM(LlamaForCausalLM):
             
         if "mask" in self.loss_term: # b, l, 32
             mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
-            mask_loss = (mask_loss - 0.5) ** 2
+            # mask_loss = (mask_loss - 0.5) ** 2
             mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
             loss = loss + mask_loss
             self.mask_loss = mask_loss.item() # for callback function   
@@ -1214,7 +1214,8 @@ class DifferentiableMask(nn.Module):
         # mask setting
         mask_options = self.make_mask(skip_level=skip_level).cuda()
         self.register_buffer("mask_options", mask_options)
-        self.hard = hard
+        self.hard = True
+        # self.hard = hard
 
         self.current_scale_multiplier = self.scale_multiplier[0]
         self.current_temperature = self.temperature[0]

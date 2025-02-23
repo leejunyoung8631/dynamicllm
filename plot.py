@@ -46,7 +46,7 @@ def plot_loss(filepath, savepath):
 import os
 
 def main():
-    target_path = "weight/dyllm_test_7"
+    target_path = "weight/dyllm_test_10"
     
     mask_path = os.path.join(target_path, "token_mask.npy")
     loss_path = os.path.join(target_path, "lossfile.npy")

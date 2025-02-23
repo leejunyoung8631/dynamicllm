@@ -87,7 +87,7 @@ if __name__ == "__main__":
         "--model_class",
         type=str,
         default="dyllm",
-        help="chosse in [dyllm, ...]",
+        help="chosse in [dyllm, normal]",
     )
     parser.add_argument("--device", type=str, default="cuda", help="device")
     parser.add_argument(

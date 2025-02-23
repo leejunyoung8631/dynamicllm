@@ -3,4 +3,4 @@
 
 
 
-CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight weight/dyllm_test_7/checkpoint-800 --check_count 
+CUDA_VISIBLE_DEVICES=0 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight weight/dyllm_test_10/checkpoint-200 --check_count 

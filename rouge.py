@@ -1,6 +1,7 @@
 import argparse
 import os
 import json
+import numpy as np
 
 import torch
 
@@ -14,7 +15,7 @@ from modelutils import get_model
 from modelutils import load_mask_weight, set_inference
 
 
-
+from dyllm_model import DyLLM
 
 
 def main():
@@ -62,7 +63,7 @@ def main():
     parser.add_argument("--use_bfloat", default=False, action="store_true")
     
     parser.add_argument("--loss_term", default="mask")
-    parser.add_argument("--mask_weight", default="./baffo32/decapoda-research-llama-7B-hf")
+    parser.add_argument("--mask_weight", default=None)
     parser.add_argument("--is_generation", action="store_true", default=False)
     
     parser.add_argument("--check_count", action="store_true", help="if True, check the number of skipped blocks")
@@ -83,7 +84,7 @@ def main():
     
     
     set_seed(args.seed)
-    model, tokenizer = get_model(base_model=args.base_model, model_class="dyllm", loss_term=args.loss_term)    
+    model, tokenizer = get_model(base_model=args.base_model, model_class="normal", loss_term=args.loss_term)   
     model = load_mask_weight(model, args.mask_weight)
     model = set_inference(model, args)
     model = model.cuda()
@@ -125,11 +126,14 @@ def main():
         return summary
     
     
+    # have to fix
+    # maximum token generation
+    
     output_data = []
     predictions = []
     references = []
 
-    for example in dataset[:5]:
+    for example in dataset[:20]:
         article_text = example.input
         reference_summary = example.output  # This is the gold reference
 
@@ -142,6 +146,11 @@ def main():
                             "reference" : reference_summary,
                             "prediction" : generated_summary}
                            )
+        
+        
+        if args.check_count and isinstance(model, DyLLM):
+            print(f"the number of skipped blocks : {np.mean(model.skip_count)}")
+            model.skip_count = []
     
     
     # save output
