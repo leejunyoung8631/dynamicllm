@@ -15,6 +15,9 @@ lm_cache
 results/
 *.json
 
+# for attention analysis
+!rag_distill_cp.json
+
 # weight file
 here/
 weight/

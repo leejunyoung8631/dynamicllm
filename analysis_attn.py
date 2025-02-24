@@ -1,7 +1,6 @@
 import torch
 from modelutils import get_model, set_inference
 
-import gradio as gr
 import torch
 import os
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -11,6 +10,7 @@ def load_model(model_name):
     if model_name.endswith(".bin"):
         pruned_dict = torch.load(model_name)
         tokenizer, model = pruned_dict['tokenizer'], pruned_dict['model']
+        model = model.half()
         generator = pipeline('text-generation', model=model, tokenizer=tokenizer)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -20,7 +20,8 @@ def load_model(model_name):
 
 
 
-path = "/disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_more_kd_only/merged/pytorch_model.bin"
+# path = "/disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_more_kd_only/merged/pytorch_model.bin"
+path = "/home/tako/ljy/dynamicllm/weight/llama31_25pruned_part75/merged/pytorch_model.bin"
 device = "cuda"
 
 
@@ -63,7 +64,7 @@ terminators = [  # TODO: move somewhere? to avoid repeated computation?
 
 
 
-for i in range(30):
+for i in range(100):
     response = generator(
             history_view,
             #max_length=max_length, #512,
