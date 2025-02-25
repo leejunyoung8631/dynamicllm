@@ -14,14 +14,29 @@ from tqdm import tqdm
 # AutoModelForCausalLM.register(LlamaConfig, CustomLlamaForCausalLM, exist_ok=True)
 # # End of custom config
 
+
+
+
+
+# # Custom model config -> for analysis activation
+# from transformers.models.llama.configuration_llama import LlamaConfig
+# from custom_llama import CustomLlamaForCausalLM
+# AutoModelForCausalLM.register(LlamaConfig, CustomLlamaForCausalLM, exist_ok=True)
+
+
+
 # from utils import get_model, set_model_device_evalmode, set_seed
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from generation_utils import generate_with_instruction, generate_with_instruction_deepseek
 
 
+from transformers.models.llama import LlamaForCausalLM
+
+
 
 import numpy as np
 import random
+
 
 def set_seed(random_seed=1234):
     torch.manual_seed(random_seed)
@@ -44,6 +59,10 @@ def get_model(
         # Pruning model
         pruned_dict = torch.load(base_model, map_location='cpu')
         tokenizer, model = pruned_dict['tokenizer'], pruned_dict['model']
+        
+        print(model.output_attentions)
+        exit()
+        
         fix_decapoda_config = False
     else:
         # Default HF model
@@ -109,7 +128,7 @@ def load_model(model_name, device="cuda"):
 
 
 def main(args):
-    set_seed()
+    set_seed(args.seed)
     
     # Load Pruned Model
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -159,22 +178,23 @@ def main(args):
             # with open(args.output_file, "w", encoding="utf-8") as output_file:
                 # json.dump(new_data, output_file, ensure_ascii=False, indent=4)
 
-    with open(args.output_file, "w", encoding="utf-8") as output_file:
-        json.dump(new_data, output_file, ensure_ascii=False, indent=4)
-
-    print(f"Generated data saved to {args.output_file}")
+    if args.output_file != "n":
+        with open(args.output_file, "w", encoding="utf-8") as output_file:
+            json.dump(new_data, output_file, ensure_ascii=False, indent=4)
+        print(f"Generated data saved to {args.output_file}")
     
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Testing with Lora-Tuned LLaMA')
     parser.add_argument('--base_model', type=str, required=True, help='base model name')
     parser.add_argument('--input_file', required=True, type=str)
-    parser.add_argument('--output_file', required=False, type=str)
+    parser.add_argument('--output_file', required=False, type=str, default="n")
     parser.add_argument("--use_bfloat", default=False, action="store_true")
     parser.add_argument("--use_deepseek", default=False, action="store_true")
     parser.add_argument("--skip_template", default=False, action="store_true")
     parser.add_argument("--cache_model_dir", type=str, default="./model_cache", help="llm weights")
     parser.add_argument("--temperature", default=0.7, type=float, help="Temperature")
+    parser.add_argument("--seed", default=1234, type=int, help="seed")
 
     args = parser.parse_args()
     
