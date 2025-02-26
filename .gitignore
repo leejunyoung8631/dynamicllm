@@ -6,7 +6,6 @@ __pycache__/
 *_dataset
 lm_cache
 
-
 # data file
 *.png
 *.csv
@@ -15,6 +14,7 @@ lm_cache
 results/
 *.json
 result_text
+model_cache/
 
 # for attention analysis
 !rag_distill_cp.json

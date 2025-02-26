@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python merge_model.py --base_model ./weight/o_llama31_25pruned_part75/llama31_25pruned_part75/pytorch_model.bin --lora_ckpt ./weight/llama31_25pruned_part75/checkpoint-1589 --output_dir ./weight/llama31_25pruned_part75/merged2
