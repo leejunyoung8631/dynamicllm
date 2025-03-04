@@ -40,9 +40,6 @@ def generate(model, tokenizer, input_text, device, temperature=0.7, is_deepseek=
         top_p=0.9,  # Nucleus sampling
         temperature=temperature,  # Sampling temperature
     )
-    
-    print("i exited here")
-    exit()
 
     # Decode the output
     input_token_len = inputs.input_ids.shape[-1]
