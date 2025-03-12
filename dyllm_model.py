@@ -1158,6 +1158,8 @@ class Predictor(nn.Module):
         self.skip_level = 11 # 0 skip to 11 skip
         self.predictor = nn.Sequential(
             nn.Linear(d_feature, d_feature // 2),
+            nn.ReLU(),
+            # nn.LeakyReLU(),
             nn.Linear(d_feature // 2, self.skip_level),
         )
     
