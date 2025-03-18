@@ -23,7 +23,7 @@ def get_model(base_model, model_class="normal", tokenize_name=None, is_decapoda=
         tokenize_name = LlamaTokenizer
     
     tokenizer = tokenize_name.from_pretrained(base_model)
-    model = model_class.from_pretrained(base_model, low_cpu_mem_usage=False)
+    model = model_class.from_pretrained(base_model, low_cpu_mem_usage=False, )
     
     model.config.output_hidden_states = False
     model.config.return_dict = True
@@ -52,7 +52,7 @@ def load_mask_weight(model, weight_file):
         return model
     
     # mask weight is saved at "model-00006-of-00006.safetensors"    
-    weight_file = os.path.join(weight_file, "model-00006-of-00006.safetensors")
+    weight_file = os.path.join(weight_file, "model-00003-of-00003.safetensors")
     model_dict = load_file(weight_file)
     
     # filter only mask weight
@@ -66,10 +66,10 @@ def load_mask_weight(model, weight_file):
 
 
 
-def set_inference(model, args):
     # set inference mode for mask
+def set_inference(model, args):
     if hasattr(model, "diff_mask"):
-        model.diff_mask.training = False
+        model.diff_mask.tra = False
     
     if args.is_generation:
         model.generation_skip = True

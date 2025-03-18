@@ -17,6 +17,8 @@ from datautil import set_seed
 from modelutils import get_model
 from modelutils import load_mask_weight, set_inference
 
+from peft import PeftModel
+
 
 
 @torch.no_grad()
@@ -127,18 +129,49 @@ if __name__ == "__main__":
     parser.add_argument("--check_count", action="store_true", help="if True, check the number of skipped blocks")
     parser.add_argument("--is_generation", action="store_true", )
     
+    # For peft model
+    parser.add_argument("--lora_model", action="store_true", default=False)
+    parser.add_argument("--lora_weight", default=None)
+    
     args = parser.parse_args()
     
     
     from huggingface_hub import login
     login("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")  
-    
-    
     set_seed(args.seed)
+    
+    
+    # init default model
     model, tokenizer = get_model(base_model=args.base_model, model_class=args.model_class, loss_term=args.loss_term)    
     model = load_mask_weight(model, args.mask_weight)
     model = set_inference(model, args)
+    model.half()
     model = model.cuda()
+    
+    
+    # init peft model
+    if args.lora_model:
+        if args.lora_weight == None:
+            print("Lora model requires lora model weight")
+            print("Give weight path to args.lora_weight")
+        model = PeftModel.from_pretrained(model, args.lora_weight)
+    
+    from safetensors.torch import load_file
+
+    # Replace 'model.safetensors' with the path to your safetensor file
+    # tensor_dict = load_file("./lora-alpaca/adapter_model.safetensors")
+    # tensor_dict = load_file("./lora-alpaca/checkpoint-15550/adapter_model.safetensors")
+    
+    # Iterate over all tensors in the file and print their names and shapes
+    # for name, tensor in tensor_dict.items():
+    #     print(f"Tensor name: {name}, shape: {tensor.shape}")
+    
+    # exit()
+        
+    
+    
+    
+    
 
     os.makedirs(args.output_dir, exist_ok=True)
     for add_bos_to_every in [False]:

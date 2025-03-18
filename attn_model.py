@@ -385,8 +385,19 @@ def main():
     inp = data["input"]
     output = data["output"]
     
-    modelfile = "/disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_part75/merged/pytorch_model.bin" ######################################################3
-    _, tokenizer = get_model(base_model=modelfile)
+    # modelfile = "/disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_part75/merged/pytorch_model.bin" ######################################################3
+    modelfile = "./weight/llama31_25pruned_part75/merged/pytorch_model.bin" ######################################################3
+    model, tokenizer = get_model(base_model=modelfile)
+    
+    
+    # temporarily fix source_code to save
+    from transformers import LlamaForCausalLM
+    print(model._sample)
+    exit()
+    
+    
+    
+    
     
     inst_ids = tokenizer(inst, add_special_tokens=False)["input_ids"]
     output_ids = tokenizer(output, add_special_tokens=False)["input_ids"]
@@ -434,7 +445,13 @@ def main():
     analysis 2
     : see the final output
     '''
-    analysis2(whole_data=whole_data, layer_index=layer_index)
+    # analysis2(whole_data=whole_data, layer_index=layer_index)
+    
+    
+    '''
+    analysis 3
+    : see the final probability
+    '''
 
     
 

@@ -29,12 +29,21 @@ def main(args):
 
     model, tokenizer = get_model(base_model=args.base_model, model_class=args.model_class, loss_term=args.loss_term)
     model = set_training(model, args)
-    model.to("cuda")
+    
+    # from peft import prepare_model_for_kbit_training
+    # model = prepare_model_for_kbit_training(model)
+    
+    # model.half()
+    # model.to("cuda")
     
     # Freeze all base model parameters
     for name, param in model.named_parameters():
         if "diff_mask" not in name:
             param.requires_grad = False
+        
+    # for name, param in model.named_parameters():
+    #     if "diff_mask" in name:
+    #         param.requires_grad = True
     
     dataset_helper = DataHelper(
             tokenizer,

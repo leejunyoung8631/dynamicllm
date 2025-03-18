@@ -15,9 +15,17 @@
 
 
 
-
+# Normal 
 CUDA_VISIBLE_DEVICES=0 python gentest_from_prof.py \
     --base_model /disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_part75/merged/pytorch_model.bin \
     --input_file rag_distill_cp.json \
     --output_file "result_text/out_seed_rrrx.json" \
     --seed 28
+
+
+# Repetition 
+CUDA_VISIBLE_DEVICES=0 python gentest_from_prof.py \
+    --base_model /disk/yskim/LLM-Pruner/cellprune_results/llama31_25pruned_part75/merged/pytorch_model.bin \
+    --input_file rag_distill_cp.json \
+    --output_file "result_text/out_seed_rrrx.json" \
+    --seed 1089

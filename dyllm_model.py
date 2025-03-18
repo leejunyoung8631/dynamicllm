@@ -802,6 +802,10 @@ class DyLLM(LlamaForCausalLM):
         # if labels is not None:
             # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             
+        if "none" in self.loss_term:
+            tune_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            loss += tune_loss
+            
             
         if "mask" in self.loss_term: # b, l, 32
             mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
@@ -1158,6 +1162,7 @@ class Predictor(nn.Module):
         self.skip_level = 11 # 0 skip to 11 skip
         self.predictor = nn.Sequential(
             nn.Linear(d_feature, d_feature // 2),
+            nn.ReLU(),
             nn.Linear(d_feature // 2, self.skip_level),
         )
     
@@ -1228,7 +1233,7 @@ class DifferentiableMask(nn.Module):
         self.whole_iter = None # This will be set through trainer
         
         # turn it false when inference
-        self.training = False
+        self.tra = False
         
         # for debugging -> see callback fucntion
         self.mask = None
@@ -1260,7 +1265,10 @@ class DifferentiableMask(nn.Module):
         # predictor as Gumbel parameters
         gate = x 
         
-        if self.training:
+        # idk why it turns to True (later fix)
+        # self.training = False
+        
+        if self.tra:
             start_temp, end_temp = self.temperature 
             self.current_temperature = start_temp + (end_temp - start_temp) * (self.iteration / self.whole_iter)
             start_scale, end_scale = self.scale_multiplier
@@ -1271,7 +1279,7 @@ class DifferentiableMask(nn.Module):
             self.current_max_prob = choices.max(-1)[0].mean().item()
             backprop_gate = (choices @ self.mask_options).squeeze(1)
             
-            self.mask = backprop_gate.clone().detach().cpu().numpy()
+            # self.mask = backprop_gate.clone().detach().cpu().numpy()
         else:
             # just based on the maximum logit
             backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), gate.argmax(dim=-1)]
