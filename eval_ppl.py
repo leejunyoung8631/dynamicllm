@@ -155,23 +155,7 @@ if __name__ == "__main__":
             print("Lora model requires lora model weight")
             print("Give weight path to args.lora_weight")
         model = PeftModel.from_pretrained(model, args.lora_weight)
-    
-    from safetensors.torch import load_file
 
-    # Replace 'model.safetensors' with the path to your safetensor file
-    # tensor_dict = load_file("./lora-alpaca/adapter_model.safetensors")
-    # tensor_dict = load_file("./lora-alpaca/checkpoint-15550/adapter_model.safetensors")
-    
-    # Iterate over all tensors in the file and print their names and shapes
-    # for name, tensor in tensor_dict.items():
-    #     print(f"Tensor name: {name}, shape: {tensor.shape}")
-    
-    # exit()
-        
-    
-    
-    
-    
 
     os.makedirs(args.output_dir, exist_ok=True)
     for add_bos_to_every in [False]:

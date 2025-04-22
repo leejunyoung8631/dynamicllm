@@ -186,6 +186,28 @@ class DataHelper:
                 "test": test_data
             })
             
+        elif data_path == "bookcorpus":
+             train_data = load_dataset("bookcorpus", split="train", streaming=True, cache_dir=cache_dir)
+             train_val = {"train": train_data}
+             if train_size is not None:
+                train_val["train"] = train_val["train"].select(range(train_size))
+        
+        elif data_path == "wiki_103":
+            from datasets import DatasetDict
+            train_data = load_dataset("wikitext", "wikitext-103-raw-v1", split="train", cache_dir=cache_dir)
+            test_data = load_dataset("wikitext", "wikitext-103-raw-v1", split="test", cache_dir=cache_dir)
+            
+            # if train_size is not None:
+                # train_data = train_data.select(range(train_size))
+            
+            train_val = DatasetDict({
+                "train": train_data,
+                "test": test_data
+            })
+            if train_size is not None:
+                train_val["train"] = train_val["train"].select(range(train_size))
+        
+        
         else:
             # Other datasets
             if train_name is None:

@@ -57,7 +57,8 @@ def main(args):
     else:
         train_data, val_data = dataset_helper.create_dataset(
                 args.data_path, args.val_set_size, args.extra_val_dataset,
-                args.cache_dataset_dir, args.partial_dir)
+                args.cache_dataset_dir, args.partial_dir, 
+                train_size=args.train_set_size)
     
     # Create trainer
     trainer = create_trainer(
@@ -115,6 +116,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--partial_dir", type=str, default=None, help="Directory to save/load the partial dataset for C4"
+    )
+    parser.add_argument(
+        "--train_set_size", type=int, default=None, help="train dataset size if needed"
     )
     parser.add_argument(
         "--val_set_size", type=int, default=2000, help="validation set size"

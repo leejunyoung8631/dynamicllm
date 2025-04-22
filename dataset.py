@@ -19,8 +19,8 @@ class IndexDataset(Dataset):
 
 
 def get_wikitext2():
-    traindata = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
-    testdata = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
+    traindata = load_dataset("wikitext", "wikitext-2-raw-v1", split="train", cache_dir="cache_dir")
+    testdata = load_dataset("wikitext", "wikitext-2-raw-v1", split="test", cache_dir="cache_dir")
     return traindata, testdata
 
 

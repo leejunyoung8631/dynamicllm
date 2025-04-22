@@ -13,7 +13,7 @@ MODEL_MAPPING = {
 }
 
 
-def get_model(base_model, model_class="normal", tokenize_name=None, is_decapoda=False, loss_term=None):
+def get_model(base_model, model_class="normal", tokenize_name=None, is_decapoda=False, loss_term=None, cache_dir="./temp_llama"):
     if model_class == "normal":
         model_class = AutoModelForCausalLM
     else: 
@@ -23,7 +23,7 @@ def get_model(base_model, model_class="normal", tokenize_name=None, is_decapoda=
         tokenize_name = LlamaTokenizer
     
     tokenizer = tokenize_name.from_pretrained(base_model)
-    model = model_class.from_pretrained(base_model, low_cpu_mem_usage=False, )
+    model = model_class.from_pretrained(base_model, low_cpu_mem_usage=False, cache_dir=cache_dir)
     
     model.config.output_hidden_states = False
     model.config.return_dict = True
@@ -85,7 +85,7 @@ def set_inference(model, args):
 def set_training(model, args):
     # set inference mode for mask
     if hasattr(model, "diff_mask"):
-        model.diff_mask.training = True
+        model.diff_mask.tra = True
         model.diff_mask.hard = True
     
     

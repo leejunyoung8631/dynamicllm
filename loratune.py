@@ -232,7 +232,7 @@ if __name__ == "__main__":
     # Model Type&Path
     parser.add_argument('--base_model', type=str, default="decapoda-research/llama-7b-hf", help='base model name')
     parser.add_argument('--data_path', type=str, default="yahma/alpaca-cleaned", help='data path')
-    parser.add_argument('--output_dir', type=str, default="./lora-alpaca2", help='output directory')
+    parser.add_argument('--output_dir', type=str, default="dummy", help='output directory')
     parser.add_argument("--use_bfloat", default=False, action="store_true")
     parser.add_argument("--cache_model_dir", type=str, default="./model_cache", help="llm weights")
     parser.add_argument('--cache_dataset_dir', type=str, default="./cache_dataset", help='data cache path')
@@ -243,7 +243,7 @@ if __name__ == "__main__":
     parser.add_argument('--kd_alpha', type=float, default=0.5, help='KD alpha')
 
     # Training Hyperparameters
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--micro_batch_size', type=int, default=4, help='micro batch size')
     parser.add_argument('--num_epochs', type=int, default=3, help='number of epochs')
     parser.add_argument('--learning_rate', type=float, default=3e-4, help='learning rate')

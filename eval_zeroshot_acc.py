@@ -111,11 +111,29 @@ def parse_args():
     parser.add_argument("--is_generation", action="store_true", )
     
     
+    # For peft model
+    parser.add_argument("--lora_model", action="store_true", default=False)
+    parser.add_argument("--lora_weight", default=None)
+    
+    
 
     return parser.parse_args()
 
 
 def main():
+    
+    from safetensors.torch import load_file
+    # # Load the SafeTensors file
+    # file_path = "./lora-alpaca2/adapter_model.safetensors"
+    # tensors = load_file(file_path)
+    # print(11)
+    # for k in tensors.keys():
+    #     print(k)
+    # print(22)
+    # exit()
+    
+    
+    
     args = parse_args()
     assert not args.provide_description  # not implemented
 
@@ -143,8 +161,20 @@ def main():
     from dyllm_model import DyLLM
     AutoModelForCausalLM.register(LlamaConfig, DyLLM, exist_ok=True)
     
+    
+    input_model = None
+    if args.model.endswith(".bin"):
+        import torch
+        pruned_dict = torch.load(args.model, map_location='cpu')
+        tokenizer, model = pruned_dict['tokenizer'], pruned_dict['model']
+        input_model = model
+    else:
+        input_model = args.model
+        
+    
     results = evaluator.simple_evaluate(
-        model=args.model,
+        # model=args.model,
+        model=input_model,
         model_args=args.model_args,
         tasks=task_names,
         num_fewshot=args.num_fewshot,

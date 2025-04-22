@@ -16,6 +16,11 @@ results/
 result_text
 model_cache/
 lora-alpaca*/
+cache_dir/
+data/
+dyllm_test*/
+temp_llama/
+
 
 # for attention analysis
 !rag_distill_cp.json

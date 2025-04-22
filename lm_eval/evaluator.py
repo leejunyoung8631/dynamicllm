@@ -69,6 +69,7 @@ def simple_evaluate(
     np.random.seed(1234)
 
     assert tasks != [], "No tasks specified"
+    
 
     # <lm_eval.models.huggingface.AutoCausalLM object at 0x7bba40064880>
     if isinstance(model, str):
@@ -77,6 +78,8 @@ def simple_evaluate(
         lm = lm_eval.models.get_model(model).create_from_arg_string(
             model_args, {"batch_size": batch_size, "max_batch_size": max_batch_size, "device": device}
         )
+        
+        
     elif isinstance(model, transformers.PreTrainedModel):
         
         lm = lm_eval.models.get_model("hf-causal")(
@@ -85,6 +88,7 @@ def simple_evaluate(
                 max_batch_size=max_batch_size,
                 )
         no_cache = True
+        
     else:
         assert isinstance(model, lm_eval.base.LM)
         lm = model

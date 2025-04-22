@@ -700,6 +700,8 @@ class DyLLM(LlamaForCausalLM):
         # re-init weight as a new model is initialized
         self.post_init()
         
+        # when running parents
+        
         # for running with mask
         self.run_mask = True
         self.skip_level = 11 # later change it with model init
@@ -718,9 +720,11 @@ class DyLLM(LlamaForCausalLM):
         self.check_count = False
         self.skip_count = []
     
-    # it will return the mask
     def get_mask(self, ):
         return self.diff_mask.mask
+    
+    def get_chosen_idx(self, ):
+        return self.diff_mask.chosen
     
     
     def forward_with_mask(self,
@@ -736,6 +740,7 @@ class DyLLM(LlamaForCausalLM):
             return_dict: Optional[bool] = None,
             cache_position: Optional[torch.LongTensor] = None,
             num_logits_to_keep: int = 0,
+            choose_mask = None,
             **loss_kwargs,
             ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -747,7 +752,6 @@ class DyLLM(LlamaForCausalLM):
         
         # for generation process
         is_generate = self.generation_skip
-        
         
         # 1. predict layers using n-th features
         # 2. generate mask for token skipping
@@ -767,7 +771,13 @@ class DyLLM(LlamaForCausalLM):
             is_generate = False,
         )
         predict_state = predict_feature[0]
-        skip_mask = self.diff_mask(predict_state) # b, n, 32
+        
+        
+        # For manually setting mask in experiment
+        if choose_mask == None:
+            skip_mask = self.diff_mask(predict_state) # b, n, 32
+        else: 
+            skip_mask = self.diff_mask.mask_options[:, choose_mask, :].reshape(1, 1, -1) # b, n, 32
                 
         
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
@@ -797,21 +807,37 @@ class DyLLM(LlamaForCausalLM):
         else:
             # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
             logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
-
-        loss = 0
-        # if labels is not None:
-            # loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+        
             
+        
+        '''
+        loss calculation
+        '''
+        loss = 0
+        tune_loss = 0 # original loss
+        mask_loss = 0 # mask-based loss
+        distill_loss = 0 # distillation loss
+        ppl_loss = 0 # ppl difference compared to original
+        ppl_token_count_loss = 0 # token-level ppl
+        
+        
         if "none" in self.loss_term:
             tune_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
-            loss += tune_loss
+        
+        # mask loss design 1
+        # if "mask" in self.loss_term: # b, l, 32
+        #     mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
+        #     # mask_loss = (mask_loss - 0.5) ** 2
+        #     mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
+        #     loss = loss + mask_loss
+        #     self.mask_loss = mask_loss.item() # for callback function   
             
-            
+        # mask loss design 2
         if "mask" in self.loss_term: # b, l, 32
-            mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)       
+            mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)
+            mask_loss = mask_loss ** 2       
             # mask_loss = (mask_loss - 0.5) ** 2
             mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
-            loss = loss + mask_loss
             self.mask_loss = mask_loss.item() # for callback function   
         
         
@@ -835,8 +861,6 @@ class DyLLM(LlamaForCausalLM):
             student_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             
             distill_loss = distillation_loss(student_loss=student_loss, student_logits=logits, teacher_logits=teacher_logits, labels=labels)
-            loss = loss + distill_loss * 0.001
-            
             self.distill_loss = distill_loss.item() * 0.001 # for callback function               
             
             
@@ -861,10 +885,72 @@ class DyLLM(LlamaForCausalLM):
             teacher_ppl = self.loss_function(logits=teacher_logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             student_ppl = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             ppl_loss = student_ppl - teacher_ppl
-            loss = loss + ppl_loss
-            
             self.ppl_loss = ppl_loss.item() # for callback function   
         
+        
+        
+        if "ppl_token_count" in self.loss_term:
+            original_feature = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+                get_first = False,
+                skip_mask = None
+            )
+            original_hidden_state = original_feature[0]
+            teacher_logits = self.lm_head(original_hidden_state[:, -num_logits_to_keep:, :])
+            # teacher_ppl = self.loss_function(logits=teacher_logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            # student_ppl = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
+            
+            
+            def indicator_loss(student_answer, teacher_answer):
+                indicator = (student_answer >= teacher_answer).float().mean()
+
+                return indicator
+            
+            def soft_indicator_loss(student_answer, teacher_answer, temperature=10.0):
+                return torch.sigmoid((student_answer - teacher_answer) * temperature).mean()
+            
+            
+            def calculate_loss(logits, labels, ):
+                shift_logits = logits[:, :-1, :].contiguous()
+                shift_labels = labels[:, 1:].contiguous()
+                loss = nn.functional.cross_entropy(shift_logits.reshape(-1, shift_logits.size(-1)), 
+                                                   shift_labels.view(-1), 
+                                                   ignore_index=-100, reduction="none")
+                
+                return loss
+        
+                
+            teacher_ppl = calculate_loss(logits = teacher_logits, labels = labels)
+            student_ppl = calculate_loss(logits = logits, labels = labels)
+            
+            ppl_token_count_loss = soft_indicator_loss(student_answer=student_ppl, teacher_answer=teacher_ppl)
+            self.ppl_token_count_loss = ppl_token_count_loss.item() # for callback function   
+        
+        
+        def sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss):
+            loss = 0
+            weight = [0, 0.5, 0, 0, 0.5, ]
+            
+            loss += weight[0] * tune_loss
+            loss += weight[1] * mask_loss
+            loss += weight[2] * distill_loss
+            loss += weight[3] * ppl_loss
+            loss += weight[4] * ppl_token_count_loss
+            
+            return loss
+        
+        
+        loss = sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss)
+            
         
         if self.check_count:
             skip_mask_count = skip_mask.clone()
@@ -902,11 +988,12 @@ class DyLLM(LlamaForCausalLM):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
+        run_parents = False,
         **loss_kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         
         
-        if self.run_mask:
+        if (self.run_mask) and (run_parents == False):
             return self.forward_with_mask(
                 input_ids,
                 attention_mask,
@@ -971,6 +1058,8 @@ class DyLLM(LlamaForCausalLM):
         )
     
     
+    
+    ### for geneation task
     # inherent from GenerationMixin
     def _sample(
             self,
@@ -1218,7 +1307,7 @@ class DifferentiableMask(nn.Module):
         
         # mask setting
         mask_options = self.make_mask(skip_level=skip_level).cuda()
-        self.register_buffer("mask_options", mask_options)
+        self.register_buffer("mask_options", mask_options) # 1, 11, 32
         self.hard = True
         # self.hard = hard
 
@@ -1235,14 +1324,16 @@ class DifferentiableMask(nn.Module):
         # turn it false when inference
         self.tra = False
         
-        # for debugging -> see callback fucntion
+        # for debugging e.g. callback fucntion, metric
         self.mask = None
-    
-    
+        self.chosen = None
+        
+        
     
     def make_mask(self, skip_level):
         token_mask = None
-        order = [24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12]
+        order = [24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12] # my implementation
+        # order = [25, 10, 11, 23, 27, 18, 21, 14, 24, 8, 20] # shortened llama implementation
         
         index = torch.arange(skip_level).unsqueeze(0)
         b, n = index.shape
@@ -1278,12 +1369,12 @@ class DifferentiableMask(nn.Module):
             choices = gumbel_softmax(sampling_tensor, tau=self.current_temperature, hard=self.hard)
             self.current_max_prob = choices.max(-1)[0].mean().item()
             backprop_gate = (choices @ self.mask_options).squeeze(1)
-            
-            # self.mask = backprop_gate.clone().detach().cpu().numpy()
         else:
             # just based on the maximum logit
             backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), gate.argmax(dim=-1)]
-            
-        self.sampled_gate = backprop_gate
+        
+        self.mask = backprop_gate.clone().detach().to(torch.float32).cpu().numpy()
+        self.chosen = gate.argmax(dim=-1).clone().detach().to(torch.float32).cpu().numpy()
+        # self.sampled_gate = backprop_gate
         
         return backprop_gate
