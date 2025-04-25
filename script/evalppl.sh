@@ -23,17 +23,15 @@
 
 
 # see just mask weight (not finetuned)
-# for i in $(seq 8000 200 9000)
+# for i in $(seq 200 200 800)
 # do
 #     echo "Running with value $i"
-#     CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_15/checkpoint-$i --check_count 
+#     CUDA_VISIBLE_DEVICES=0 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_17/checkpoint-$i --check_count 
 #     echo ""
 # done
 
-CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_15/checkpoint-600 --check_count 
-CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_15/checkpoint-800 --check_count 
-CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_15/checkpoint-1000 --check_count 
-CUDA_VISIBLE_DEVICES=2 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_15/checkpoint-1200 --check_count 
+CUDA_VISIBLE_DEVICES=1 python eval_ppl.py --base_model meta-llama/Llama-2-7b-chat-hf --model_class dyllm --mask_weight ./data/ljy_data/dyllm_test_19/checkpoint-400 --check_count 
+
 
 
 # see just mask weight (not finetuned)

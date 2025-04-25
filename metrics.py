@@ -132,7 +132,7 @@ def skip_ppl(model, test_loader, device):
     ppl_data = []
 
     for batch in tqdm(test_loader):
-        batch = batch.to(device)[0].reshape(1, -1)
+        batch = batch.to(device)[0].reshape(1, -1) # for the first batch
         # 1. mask_skipping operation for chosen mask
         output = model(batch, )
         chosen_idx = model.get_chosen_idx()[0]
@@ -234,6 +234,39 @@ def calculate_ppa(model, tokenizer, device):
     return ppa_score
     
     
+
+def error_propagation(model, tokenizer, device):
+    dataset = ["wikitext2"]
+    max_seq_len = 128
+    batch_size = 4
+    add_bos_to_every = False
+    
+    _, test_loader = get_loaders(
+            dataset, tokenizer, max_seq_len, batch_size, add_bos_to_every
+    )
+    
+    error = None
+    _, _ = calculate_chain(model, test_loader, device)
+    
+    return error
+
+
+
+def calculate_chain(model, test_loader, device):
+    for batch in tqdm(test_loader):
+        batch = batch.to(device)
+        
+        # 1. run parents
+        output = model(batch, run_parents=True)
+        lm_logits = output.logits
+    
+    
+    return
+
+
+
+
+
 
 
 
@@ -387,7 +420,7 @@ if __name__ == "__main__":
     '''
     2. ppl diff with all skipped block
     '''
-    # cutline = 20
+    # cutline = 120
     # ppl_data, chosen_data = check_skiping_ppl(model, tokenizer, args.device)
     # ppl_data = ppl_data[:, :cutline]
     # chosen_data = chosen_data[:cutline]   
@@ -421,12 +454,19 @@ if __name__ == "__main__":
     
     
     '''
-    ppl metric 
+    3. calculate ppl metric 
     '''
-    ppa = calculate_ppa(model, tokenizer, args.device)
-    ppa_score = np.mean(ppa) * 100
-    print("total token length : ", len(ppa))
-    print("PPA score : ", ppa_score)
+    # ppa = calculate_ppa(model, tokenizer, args.device)
+    # ppa_score = np.mean(ppa) * 100
+    # print("total token length : ", len(ppa))
+    # print("PPA score : ", ppa_score)
+    
+    
+    
+    '''
+    4. Error propagation
+    '''
+    error = error_propagation(model, tokenizer, args.device)
     
     
     

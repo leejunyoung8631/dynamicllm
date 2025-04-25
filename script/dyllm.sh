@@ -3,8 +3,8 @@ CUDA_VISIBLE_DEVICES=1 python dyllm.py \
                     --base_model meta-llama/Llama-2-7b-chat-hf \
                     --data_path wikitext \
                     --learning_rate 1e-4 --batch_size 64 --micro_batch_size 4 \
-                    --output_dir ./data/ljy_data/dyllm_test_16 \
-                    --num_epochs 3 --loss_term ppl_token_count,mask \
+                    --output_dir ./data/ljy_data/dyllm_test_20 \
+                    --num_epochs 3 --loss_term ppl_token_count \
                     --model_class dyllm --use_bfloat
 
 

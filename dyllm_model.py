@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Un
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.functional import gumbel_softmax
+from torch.nn.functional import gumbel_softmax, softplus
 
 import numpy as np
 from loss import distillation_loss
@@ -694,6 +694,8 @@ class DyLLM(LlamaForCausalLM):
     def __init__(self, config, ):
         super().__init__(config)
         
+        self.it = 0
+        
         # new model
         self.model = DyLLMLlama(config)
         
@@ -835,7 +837,7 @@ class DyLLM(LlamaForCausalLM):
         # mask loss design 2
         if "mask" in self.loss_term: # b, l, 32
             mask_loss = ( torch.sum(skip_mask, dim=-1) - (self.config.num_hidden_layers - (self.skip_level - 1) )) / (self.skip_level - 1)
-            mask_loss = mask_loss ** 2       
+            # mask_loss = mask_loss ** 2       
             # mask_loss = (mask_loss - 0.5) ** 2
             mask_loss = mask_loss.mean(dim=-1).mean(dim=-1)
             self.mask_loss = mask_loss.item() # for callback function   
@@ -925,20 +927,34 @@ class DyLLM(LlamaForCausalLM):
                 loss = nn.functional.cross_entropy(shift_logits.reshape(-1, shift_logits.size(-1)), 
                                                    shift_labels.view(-1), 
                                                    ignore_index=-100, reduction="none")
-                
                 return loss
-        
+
+            
+            def exp_softplus(student_answer, teacher_answer):    
+                loss = F.softplus( (student_answer - teacher_answer) ).mean()
+                return loss
+             
+            # def softplus_base10(student_answer, teacher_answer):
+            #     ppl_diff = student_answer - teacher_answer
+            #     ppl_diff = torch.relu
                 
+            #     return torch.log1p(torch.exp(student_answer - teacher_answer)) / torch.log(torch.tensor(10.0)) 
+            
+            
             teacher_ppl = calculate_loss(logits = teacher_logits, labels = labels)
             student_ppl = calculate_loss(logits = logits, labels = labels)
+            # teacher_ppl = torch.exp(teacher_ppl)
+            # student_ppl = torch.exp(student_ppl)
             
-            ppl_token_count_loss = soft_indicator_loss(student_answer=student_ppl, teacher_answer=teacher_ppl)
+            # ppl_token_count_loss = exp_softplus(student_answer=student_ppl, teacher_answer=teacher_ppl)
+            # ppl_token_count_loss = softplus_base10(student_ppl, teacher_ppl).mean()
+            ppl_token_count_loss = exp_softplus(student_ppl, teacher_ppl)
             self.ppl_token_count_loss = ppl_token_count_loss.item() # for callback function   
         
         
         def sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss):
             loss = 0
-            weight = [0, 0.5, 0, 0, 0.5, ]
+            weight = [0, 0, 0, 0, 1,]
             
             loss += weight[0] * tune_loss
             loss += weight[1] * mask_loss
@@ -946,10 +962,16 @@ class DyLLM(LlamaForCausalLM):
             loss += weight[3] * ppl_loss
             loss += weight[4] * ppl_token_count_loss
             
+            # if self.it % 20 == 0:
+                # print("mask_loss : ", mask_loss.item())
+                # print("ppl_token_count_loss : ", ppl_token_count_loss.item())
+            
+            self.it += 1
+            
             return loss
         
-        
-        loss = sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss)
+        if self.diff_mask.tra:
+            loss = sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss)
             
         
         if self.check_count:
