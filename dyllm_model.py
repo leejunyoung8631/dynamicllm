@@ -743,6 +743,7 @@ class DyLLM(LlamaForCausalLM):
             cache_position: Optional[torch.LongTensor] = None,
             num_logits_to_keep: int = 0,
             choose_mask = None,
+            mask_idx = None, 
             **loss_kwargs,
             ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -775,10 +776,15 @@ class DyLLM(LlamaForCausalLM):
         predict_state = predict_feature[0]
         
         
-        # For manually setting mask in experiment
-        if choose_mask == None:
+        # later repalce choose_mask as mode => e.g. mode == ["set_last", "greedy", "set_all", ....]
+        if choose_mask == None: # 1. using predictor
             skip_mask = self.diff_mask(predict_state) # b, n, 32
-        else: 
+        elif isinstance(choose_mask, str) and choose_mask.startswith("set_last"):
+            n = int(choose_mask.split("_")[-1])
+            skip_mask = self.diff_mask(predict_state, n) # b, n, 32
+        elif choose_mask == "greedy":
+            skip_mask = self.diff_mask(predict_state, choose_mask, mask_idx) # b, n, 32
+        else: # 4. set all mask same
             skip_mask = self.diff_mask.mask_options[:, choose_mask, :].reshape(1, 1, -1) # b, n, 32
                 
         
@@ -931,7 +937,7 @@ class DyLLM(LlamaForCausalLM):
 
             
             def exp_softplus(student_answer, teacher_answer):    
-                loss = F.softplus( (student_answer - teacher_answer) ).mean()
+                loss = F.softplus( student_answer - teacher_answer ).mean()
                 return loss
              
             # def softplus_base10(student_answer, teacher_answer):
@@ -954,7 +960,7 @@ class DyLLM(LlamaForCausalLM):
         
         def sum_loss(tune_loss, mask_loss, distill_loss, ppl_loss, ppl_token_count_loss):
             loss = 0
-            weight = [0, 0, 0, 0, 1,]
+            weight = [0, 0.5, 0, 0.5, 0,]
             
             loss += weight[0] * tune_loss
             loss += weight[1] * mask_loss
@@ -1368,10 +1374,9 @@ class DifferentiableMask(nn.Module):
         # token_mask = token_mask.permute(0, 2, 1) # (b, n, 32) -> (b, 32, n)
         
         return token_mask
-    
-    
+      
 
-    def forward(self, x, ): 
+    def forward(self, x, n = None, mask_id = None): 
         # predict the number of skipped using predictor
         x = self.mask_predictor(x)
         
@@ -1393,10 +1398,23 @@ class DifferentiableMask(nn.Module):
             backprop_gate = (choices @ self.mask_options).squeeze(1)
         else:
             # just based on the maximum logit
-            backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), gate.argmax(dim=-1)]
+            gate = gate.argmax(dim=-1) # [[5, 0, 3, ....], [10, 2, 7, ....], .... ], [b, l]
+            
+            '''
+            later replace below for other option
+            '''
+            # if isinstance(n, int):
+            #     gate[:, -1] = n
+            # elif isinstance(n, torch.Tensor) and len(n) != 0:
+            #     n = torch.tensor(n, device=gate.device)
+            #     gate[:, :-1] = n
+            #     print(gate)
+            if mask_id is not None:
+                gate = mask_id
+            backprop_gate = self.mask_options[torch.arange(self.mask_options.shape[0]), gate] # [b, l, d(num of layer)]
         
         self.mask = backprop_gate.clone().detach().to(torch.float32).cpu().numpy()
-        self.chosen = gate.argmax(dim=-1).clone().detach().to(torch.float32).cpu().numpy()
+        self.chosen = gate.clone().detach().to(torch.float32).cpu().numpy()
         # self.sampled_gate = backprop_gate
         
         return backprop_gate

@@ -1,8 +1,0 @@
-[
-    {
-        "output": "월 27시간 B형 혜택을 받을 수 있는 대상자는 다음과 같습니다:\n\n1. 수급자 및 차상위 (가형) - 본인부담금: 월 13,930원\n2. 중위소득 70% 이하 (나형) - 본인부담금: 월 27,860원",
-        "instruction": "Using the information contained in the context, give a comprehensive answer to the question.\nIf the answer cannot be deduced from the context, do not give an answer.\nContext:제공시간|대상자|본인부담금\n월 24시간(A형)|수급자 및 차상위 (가형)|면제\n월 24시간(A형)|중위소득 70%이하 (나형)| 월24,770원\n월 27시간(B형)|수급자 및 차상위 (가형)|월13,930원\n월 27시간(B형)|중위소득 70%이하 (나형)|월27,860원\n월 40시간(C형)|의료급여수급자 중 장기입원 사례관리 퇴원자|면제\n\nQuestion:월 27 시간 B형 혜택을 받을 수 있는 대상자는 누구인가요?",
-        "input": ""
-    }
-]
-

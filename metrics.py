@@ -245,25 +245,153 @@ def error_propagation(model, tokenizer, device):
             dataset, tokenizer, max_seq_len, batch_size, add_bos_to_every
     )
     
-    error = None
-    _, _ = calculate_chain(model, test_loader, device)
+    ppl_data = calculate_chain(model, test_loader, device)
     
-    return error
+    return ppl_data
 
 
 
+
+
+@torch.no_grad()
 def calculate_chain(model, test_loader, device):
     for batch in tqdm(test_loader):
-        batch = batch.to(device)
+        batch = batch.to(device)  
+        batch = batch[0].reshape(1, -1)
+        b, n = batch.shape
+        ppl_data = []
         
-        # 1. run parents
-        output = model(batch, run_parents=True)
-        lm_logits = output.logits
+        for t in range(n):
+            p_batch = batch[:, :t+1]
+            temp_data = []
+            
+            # 2. each skip level
+            for skip_id in range(11):
+                
+                # output = model(p_batch, choose_mask=skip_id)
+                output = model(p_batch, choose_mask=f"set_last_{skip_id}")
+                lm_logits = output.logits
+
+                shift_logits = lm_logits[:, :t+1, :].contiguous()
+                shift_labels = batch[:, 1:t+2].contiguous()
+
+                loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+                loss = loss_fct(
+                    shift_logits.reshape(-1, shift_logits.size(-1)), shift_labels.view(-1)
+                )
+                temp_data.append(np.exp(loss.cpu().numpy().astype(np.float64)))
+            ppl_data.append(temp_data)
+            
+            
+            if t==20:
+                return ppl_data
+        
     
     
     return
 
 
+
+
+def get_maximum(model, tokenizer, device):
+    dataset = ["wikitext2"]
+    max_seq_len = 128
+    batch_size = 4
+    add_bos_to_every = False
+    
+    _, test_loader = get_loaders(
+            dataset, tokenizer, max_seq_len, batch_size, add_bos_to_every
+    )
+    
+    ppl_data = get_best(model, test_loader, device)
+    
+    return ppl_data
+
+
+def make_mask_idx(mask_idx, b, skip_id):
+    new_mask_idx = torch.zeros((b, 1), dtype=torch.long)
+    new_mask_idx[:, :] = skip_id
+    
+    if mask_idx is not None:
+        new_mask_idx = torch.concat([mask_idx, new_mask_idx], dim=-1)
+        
+    return new_mask_idx
+
+
+
+@torch.no_grad()
+def get_best(model, test_loader, device):
+    for batch in tqdm(test_loader):
+        batch = batch.to(device) # b, n
+        b, n = batch.shape
+        save_ppl = []
+        for i in range(b):
+            save_ppl.append([])
+            
+        mask_idx = None 
+        
+        # token
+        for t in range(n):
+            p_batch = batch[:, :t+1]
+            # print("batch")
+            # print(p_batch)
+            temp_data = []
+            
+            # 2. each skip level
+            # for skip_id in range(11):
+            for skip_id in range(11):
+                temp_mask = make_mask_idx(mask_idx, b, skip_id)
+                # print("mask_idx => temp_mask")
+                # print(temp_mask)
+                output = model(p_batch, choose_mask="greedy", mask_idx=temp_mask)
+                lm_logits = output.logits
+
+                shift_logits = lm_logits[:, :t+1, :].contiguous()
+                shift_labels = batch[:, 1:t+2].contiguous()
+                # print(shift_labels)
+                
+
+                loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+                loss = loss_fct(
+                    shift_logits.reshape(-1, shift_logits.size(-1)), shift_labels.view(-1)
+                )
+                
+                # bring specific token loss
+                # print(loss)
+                if t == 0:
+                    loss = loss
+                else:
+                    indices = t + torch.arange(b) * (t + 1)
+                    loss = loss[indices]
+                # print(loss)
+                # print("\n")
+                
+                temp_data.append(np.exp(loss.cpu().numpy().astype(np.float32)))
+            
+            # get the last token
+            temp_data = np.stack(temp_data)
+            
+            # save all the ppl to get ranking loss
+            for i in range(b):
+                save_ppl[i].append(temp_data[:, i])
+            min_index = np.argmin(temp_data, axis=0).reshape(4,1)
+            
+            if mask_idx == None:
+                mask_idx = torch.tensor(min_index, dtype=torch.long)
+            else:
+                min_inddex = torch.tensor(min_index, dtype=torch.long)
+                mask_idx = torch.concat([mask_idx, min_inddex], dim=-1)
+            
+            if t == 4:
+                exit()
+            
+            
+            if t==20:
+                return 
+        
+    
+    
+    return
 
 
 
@@ -420,7 +548,7 @@ if __name__ == "__main__":
     '''
     2. ppl diff with all skipped block
     '''
-    # cutline = 120
+    # cutline = 20
     # ppl_data, chosen_data = check_skiping_ppl(model, tokenizer, args.device)
     # ppl_data = ppl_data[:, :cutline]
     # chosen_data = chosen_data[:cutline]   
@@ -466,9 +594,80 @@ if __name__ == "__main__":
     '''
     4. Error propagation
     '''
-    error = error_propagation(model, tokenizer, args.device)
+    # ppl_data = error_propagation(model, tokenizer, args.device)
+    # for idx, data in enumerate(ppl_data, start=1):
+    #     data = np.array(data)
+    #     fig, ax = plt.subplots(figsize=(data.shape[1]*1.5, 6))  # 너비를 열 수에 따라 조정
+    #     ax.axis('off')
+    #     ax.axis('tight')
+        
+    #     table = ax.table(cellText=np.round(data, 2), loc='center', cellLoc='center')
+    #     table.auto_set_font_size(False)
+    #     table.set_fontsize(8)
+    #     table.scale(1.2, 1.2)
+        
+    #     plt.tight_layout()
+    #     plt.savefig(f".dirdir/table_{idx}.png")  # 각각 table_1.png, table_2.png, ..., table_20.png 저장
+    #     plt.close(fig)  # 메모리 절약을 위해 그림 닫기
     
     
+    
+    '''
+    5. get minimum value answer
+    '''
+    # get_maximum(model, tokenizer, args.device)
+    
+    
+    
+    
+    '''
+    6. save data with ranking loss information
+    '''
+    from datasets import load_dataset
+    ds = load_dataset("wikitext", "wikitext-2-raw-v1", split="train")
+    
+    @torch.no_grad
+    def get_dataset(tokenizer, model, device="cpu", max_length=256):
+        def extract_token_features(batch):
+            # batch["text"] : List[str]
+            enc = tokenizer(
+                batch["text"],
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt"
+            )
+            input_ids = enc["input_ids"].to(device)
+            attn_mask = enc["attention_mask"].to(device)
+            
+            print(input_ids)
+            print(input_ids.shape)
+            exit()            
+            
+
+            out = model(input_ids, attention_mask=attn_mask)
+            hs = out.last_hidden_state.cpu()  # [B, L, H]
+
+            features = [seq.numpy().tolist() for seq in hs]
+            return {"token_features": features}
+
+        return extract_token_features
+    
+    
+    
+    extract_fn = get_dataset()
+    ds = ds.map(extract_fn, batched=True, batch_size=8, remove_columns=["text"])
+    
+    
+    
+    
+        
+    
+    
+    
+    
+
+
     
     
     
