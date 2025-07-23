@@ -118,7 +118,7 @@ def main():
                 do_sample=True,              # or False if you prefer greedy
                 top_k=0,                    # you can tune these 
                 top_p=0.9,                  # parameters as well
-                no_repeat_ngram_size=3       # helps reduce repetition
+                # no_repeat_ngram_size=3       # helps reduce repetition
             )
         
         summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)

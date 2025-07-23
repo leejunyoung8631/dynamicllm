@@ -729,6 +729,71 @@ class DyLLM(LlamaForCausalLM):
         return self.diff_mask.chosen
     
     
+    def multiple_forward(self,
+            input_ids: torch.LongTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+            cache_position: Optional[torch.LongTensor] = None,
+            num_logits_to_keep: int = 0,
+            choose_mask = None,
+            mask_idx = None, 
+            **loss_kwargs,
+            ) -> Union[Tuple, CausalLMOutputWithPast]:
+        
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            cache_position=cache_position,
+        )
+        
+        
+        def calculate_loss(logits, labels, ):
+            shift_logits = logits[:, :-1, :].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
+            loss = nn.functional.cross_entropy(shift_logits.reshape(-1, shift_logits.size(-1)), 
+                                                shift_labels.view(-1), 
+                                                ignore_index=-100, reduction="none")
+            return loss
+        
+        
+        layer_prob = []
+        for i, hidden in enumerate(outputs.hidden_states):
+            # hidden: (batch, seq_len, hidden_size)
+            # pass through the same lm_head you use for final logits
+            logits = self.lm_head(hidden)    # (batch, seq_len, vocab_size)            
+            layer_prob.append(logits, labels)
+        
+        
+        
+        
+        
+        
+        
+        
+    
+        return
+    
+    
     def forward_with_mask(self,
             input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.Tensor] = None,
@@ -827,6 +892,7 @@ class DyLLM(LlamaForCausalLM):
         distill_loss = 0 # distillation loss
         ppl_loss = 0 # ppl difference compared to original
         ppl_token_count_loss = 0 # token-level ppl
+        new_loss = 0
         
         
         if "none" in self.loss_term:
@@ -894,7 +960,7 @@ class DyLLM(LlamaForCausalLM):
             student_ppl = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
             ppl_loss = student_ppl - teacher_ppl
             self.ppl_loss = ppl_loss.item() # for callback function   
-        
+            
         
         
         if "ppl_token_count" in self.loss_term:
@@ -1017,8 +1083,24 @@ class DyLLM(LlamaForCausalLM):
         cache_position: Optional[torch.LongTensor] = None,
         num_logits_to_keep: int = 0,
         run_parents = False,
+        mult = False,
         **loss_kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
+        if mult == True:
+            return self.multiple_forward(input_ids,
+                attention_mask,
+                position_ids,
+                past_key_values,
+                inputs_embeds,
+                labels,
+                use_cache,
+                output_attentions,
+                output_hidden_states,
+                return_dict,
+                cache_position,
+                num_logits_to_keep,
+                **loss_kwargs,
+                )   
         
         
         if (self.run_mask) and (run_parents == False):
