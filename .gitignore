@@ -29,3 +29,7 @@ temp_llama/
 # weight file
 here/
 weight/
+
+
+# env varibale
+.env

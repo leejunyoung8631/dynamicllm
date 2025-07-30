@@ -254,10 +254,9 @@ class DyLM(LlamaForCausalLM):
         
         self.layer_prob = None
         
-        # for i in range(len(self.skip_order)):
-        #     self.skip_order[i] -= self.skip_block
         
-    
+        
+    # for training skip predictor
     def forward_skip(
         self,
         input_ids:        torch.LongTensor = None,
@@ -345,7 +344,13 @@ class DyLM(LlamaForCausalLM):
             layer_prob=layer_prob
         )
         
-        
+    
+    from transformers.generation.utils import GenerationMixin
+    
+    def skip_generate():
+    
+    
+    
         
     
     def forward(

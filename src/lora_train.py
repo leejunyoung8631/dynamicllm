@@ -3,6 +3,7 @@ Refer to
 https://github.com/tloen/alpaca-lora/blob/main/finetune.py
 '''
 
+import wandb
 import os
 import argparse
 from typing import Any, Dict, List
@@ -22,6 +23,8 @@ from peft import (
     get_peft_model,
     get_peft_model_state_dict,
 )
+
+from dotenv import load_dotenv
 
 try:
     from peft import prepare_model_for_int8_training
@@ -256,13 +259,10 @@ def main(args):
     os.environ["WANDB_PROJECT"] = args.wandb_project
     set_seed(args.seed)
     
-    import wandb
-    wandb.login(key="50d1622956d86d0c79e8a2c666215e41c34f7aa3")
+    load_dotenv()
+    wandb.login(key="WANDB_API_KEY")
     wandb.init(entity="ljy32051-daegu-gyeongbuk-institute-of-science-technology", project=args.wb_proj)
-    
-    
-    torch.set_printoptions(profile='full')
-    set_seed(args.seed)
+    # torch.set_printoptions(profile='full')
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # model, tokenizer = get_model(args.base_model, args.cache_model_dir, device, args.use_bfloat, args.use_8bit_model)
