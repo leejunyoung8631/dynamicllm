@@ -90,15 +90,13 @@ def main(args):
     model.get_hidden = args.get_hidden
     
     
-    
-    
     ### test for just llm architecture
     prompt = random.choice(PREFIXES)
     prompt = tokenizer(prompt, return_tensors="pt").to(device)
     
     generate_ids = model.generate(
         **prompt,
-        max_new_tokens=50,
+        max_new_tokens=100,
         do_sample=True,
         top_p=0.9,
         temperature=0.8,
@@ -113,4 +111,22 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Tuning Pruned LLM')
+
+    # Model Type&Path
+    parser.add_argument('--base_model', type=str, default="decapoda-research/llama-7b-hf", help='base model name')
+    # parser.add_argument('--data_path', type=str, default="yahma/alpaca-cleaned", help='data path')
+    # parser.add_argument('--output_dir', type=str, default="./lora-alpaca", help='output directory')
+    parser.add_argument("--use_bfloat", default=False, action="store_true")
+    parser.add_argument("--cache_model_dir", type=str, default="./model_cache", help="llm weights")
+    parser.add_argument('--cache_dataset_dir', type=str, default="./cache_dataset", help='data cache path')
+    
+    
+    args = parser.parse_args()
+    torch_version = int(torch.__version__.split('.')[1])
+    args.torch_version = torch_version
+
+    # os.makedirs(args.output_dir, exist_ok=True)
+    
+    
+    main(args)
