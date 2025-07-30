@@ -10,9 +10,9 @@ class DyDynamicCache(DynamicCache):
         super().__init__()
         '''
         buffer = [{ skip_layers : [], feature : [] },
-                { skip_layers : [], feature : [] },
-                            ....
-                ]
+                  { skip_layers : [], feature : [] },
+                                  ....
+                 ]
         '''
         self.buffer = []
         self.current_position = 0
@@ -37,23 +37,26 @@ class DyDynamicCache(DynamicCache):
         if start_idx is None:
             return hidden_state
 
-        
         to_cat = []
         for entry in self.buffer[start_idx:]:
-            to_cat.append(entry["feature"])
-        to_cat.append(hidden_state)
-        
-        
-        self.remove_prev() # remove prev if it is empty
-        
+            feature = entry["feature"].pop(0) # get & remove
+            to_cat.append(feature)
+            del entry["skip_layers"][0]
+        to_cat.append(hidden_state) # append the last component
+    
+        self.remove_prev() # check & remove prev     
         
         return torch.cat(to_cat, dim=1)
     
     
     
     # remove previous cahce if it is empty
-    def remove_prev():
-            
+    def remove_prev(self, ):
+        before_len = len(self.buffer)
+        self.buffer = [buf for buf in self.buffer if len(buf["skip_layers"]) > 0]
+        removed = before_len - len(self.buffer)
+        self.current_position = max(0, self.current_position - removed)
+        
         
     
     def update(
