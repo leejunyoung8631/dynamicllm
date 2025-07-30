@@ -4,7 +4,57 @@ from typing import Optional, Tuple, Any, Dict
 from transformers.cache_utils import DynamicCache
 
 
+# skip_cache
 class DyDynamicCache(DynamicCache):
+    def __init__(self, num_hidden_layers: Optional[int] = None) -> None:
+        super().__init__()
+        '''
+        buffer = [{ skip_layers : [], feature : [] },
+                { skip_layers : [], feature : [] },
+                            ....
+                ]
+        '''
+        self.buffer = []
+        self.current_position = 0
+    
+    def add_to_buffer(self, layer_idx, layer_feature):
+        if len(self.buffer) == self.current_position:
+            self.buffer.append( {"skip_layers": [], "feature": []} )
+            self.current_position += 1
+        
+        self.buffer[-1]["skip_layers"].append(layer_idx)
+        self.buffer[-1]["feature"].append(layer_feature)
+    
+    
+    # iter idx from the first and return all the proceeding hidden_states 
+    def get_past(self, idx, hidden_state):
+        start_idx = None
+        for k, entry in enumerate(self.buffer):
+            if idx in entry["skip_layers"]:
+                start_idx = k
+                break
+        
+        if start_idx is None:
+            return hidden_state
+
+        
+        to_cat = []
+        for entry in self.buffer[start_idx:]:
+            to_cat.append(entry["feature"])
+        to_cat.append(hidden_state)
+        
+        
+        self.remove_prev() # remove prev if it is empty
+        
+        
+        return torch.cat(to_cat, dim=1)
+    
+    
+    
+    # remove previous cahce if it is empty
+    def remove_prev():
+            
+        
     
     def update(
         self,
@@ -55,3 +105,24 @@ class DyDynamicCache(DynamicCache):
         
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
+
+
+class SkipControl():
+    def __init__(self,):
+        '''
+        token_kwargs = [{ skip_layers : [], feature : [] },
+                        { skip_layers : [], feature : [] },
+                                        ....
+                       ]
+        '''
+        self.token_kwargs = []
+        self.prev_position = -1
+        self.current_position = -1
+    
+    
+    def make_input(self, ):
+        23123312
+    
+    
+    def remove_prev(self, ):
+        32133214

@@ -67,12 +67,12 @@ import random
 
 def main(args):
     #  Set WanDB
-    os.environ["WANDB_PROJECT"] = args.wandb_project
+    # os.environ["WANDB_PROJECT"] = args.wandb_project
     set_seed(args.seed)
     
     load_dotenv()
-    wandb.login(key="WANDB_API_KEY")
-    wandb.init(entity="ljy32051-daegu-gyeongbuk-institute-of-science-technology", project=args.wb_proj)
+    # wandb.login(key="WANDB_API_KEY")
+    # wandb.init(entity="ljy32051-daegu-gyeongbuk-institute-of-science-technology", project=args.wb_proj)
     # torch.set_printoptions(profile='full')
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -120,6 +120,23 @@ if __name__ == "__main__":
     parser.add_argument("--use_bfloat", default=False, action="store_true")
     parser.add_argument("--cache_model_dir", type=str, default="./model_cache", help="llm weights")
     parser.add_argument('--cache_dataset_dir', type=str, default="./cache_dataset", help='data cache path')
+    parser.add_argument("--seed", type=int, default=1234)
+    
+    
+    # skip info
+    parser.add_argument('--skip_order', 
+                        nargs='+', 
+                        type=int, 
+                        default=[24, 26, 25, 10, 27, 13, 22, 14, 9, 29, 12], 
+                        help='skip order index of block')
+    parser.add_argument("--skip_block", default=0, type=int, help="the number of block skipped")
+    parser.add_argument('--model_class', type=str, default="dylm")
+    
+    parser.add_argument("--get_hidden", action='store_true', default=False, help="return hidden states or not")
+    parser.add_argument("--custom_dataset", action='store_true', default=False, help="use datahelper or not")
+    
+    # dummy
+    parser.add_argument("--use_8bit_model", action='store_true', default=False, help="return hidden states or not")
     
     
     args = parser.parse_args()
@@ -127,6 +144,7 @@ if __name__ == "__main__":
     args.torch_version = torch_version
 
     # os.makedirs(args.output_dir, exist_ok=True)
+    
     
     
     main(args)
