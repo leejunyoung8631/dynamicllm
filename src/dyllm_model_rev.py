@@ -27,6 +27,8 @@ from transformers.generation.beam_constraints import DisjunctiveConstraint, Phra
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 
+from transformers.generation.utils import GenerationMixin
+
 
 if TYPE_CHECKING:
     from transformers.modeling_utils import PreTrainedModel
@@ -49,7 +51,7 @@ class DyBaseModelOutputWithPast(BaseModelOutputWithPast):
 
 class DyLlamaDecoderLayer(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
-        super().__init__(config)
+        super().__init__(config, layer_idx)
         self.hidden_size = config.hidden_size
 
         self.self_attn = DyLLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
@@ -113,7 +115,8 @@ class DyLlamaDecoderLayer(LlamaDecoderLayer):
         hidden_states = residual + hidden_states
         
         # Added : After residual only the last token will be passed 
-        hidden_states = hidden_states[:, -1]
+        # 위에서 앞에 붙어서 attention 했다면 아래 연산을 해줘야함.
+        # hidden_states = hidden_states[:, -1]
 
         # Fully Connected
         residual = hidden_states
@@ -146,44 +149,104 @@ class DyLlama(LlamaModel):
         )
     
     
-    def get_features(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        position_ids=None,
-        past_key_values=None,
-        inputs_embeds=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        skip_block=1,
-    ):
+    # def get_features(
+    #     self,
+    #     input_ids=None,
+    #     attention_mask=None,
+    #     position_ids=None,
+    #     past_key_values=None,
+    #     inputs_embeds=None,
+    #     output_attentions=None,
+    #     output_hidden_states=None,
+    #     skip_block=1,
+    # ):
+        
+    #     output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    #     output_hidden_states = (
+    #         output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    #     )
+    #     use_cache = use_cache if use_cache is not None else self.config.use_cache
+    #     return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    #     if (input_ids is None) ^ (inputs_embeds is not None):
+    #         raise ValueError(
+    #             "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
+    #         )
+
+    #     if self.gradient_checkpointing and self.training and use_cache:
+    #         print(
+    #             "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
+    #         )
+    #         use_cache = False
+
+    #     if inputs_embeds is None:
+    #         inputs_embeds = self.embed_tokens(input_ids)
+
+    #     # kept for BC (non `Cache` `past_key_values` inputs)
+    #     return_legacy_cache = False
+    #     if use_cache and not isinstance(past_key_values, Cache):
+    #         return_legacy_cache = True
+    #         if past_key_values is None:
+    #             past_key_values = DyDynamicCache()
+    #         else:
+    #             past_key_values = DyDynamicCache.from_legacy_cache(past_key_values)
+    #             print(
+    #                 "We detected that you are passing `past_key_values` as a tuple of tuples. This is deprecated and "
+    #                 "will be removed in v4.47. Please convert your cache or use an appropriate `Cache` class "
+    #                 "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
+    #             )
+
+    #     if cache_position is None:
+    #         past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+    #         cache_position = torch.arange(
+    #             past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+    #         )
+    #     if position_ids is None:
+    #         position_ids = cache_position.unsqueeze(0)
+
+    #     causal_mask = self._update_causal_mask(
+    #         attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
+    #     )
+    #     hidden_states = inputs_embeds
+
+    #     # create position embeddings to be shared across the decoder layers
+    #     position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        
+        
+        
     
-        hidden_states = self.embed_tokens(input_ids) if input_ids is not None else inputs_embeds
+    #     hidden_states = self.embed_tokens(input_ids) if input_ids is not None else inputs_embeds
 
-        all_hidden_states = () if output_hidden_states else None
-        all_attentions = () if output_attentions else None
-        past_key_values = past_key_values or [None] * len(self.layers)
+    #     all_hidden_states = () if output_hidden_states else None
+    #     all_attentions = () if output_attentions else None
+    #     past_key_values = past_key_values or [None] * len(self.layers)
+        
+    #     # print(past_key_values.key_cache[0].shape) # 32 * (batch, # of head, length, dim): 1, 8, 7, 128
+    #     # print(past_key_values.value_cache[0].shape) # 32 * (batch, # of head, length, dim): 1, 8, 7, 128
+    #     print("before : first layer")
+    #     print("hidden :", hidden_states.shape)
+        
 
-        next_past_key_values = []
-        for i, (block, past_key) in enumerate(zip(self.layers[:skip_block], past_key_values[:skip_block])):
-            if output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
+    #     # next_past_key_values = []
+    #     for i, block in enumerate(self.layers[:skip_block]):
+    #         if output_hidden_states:
+    #             all_hidden_states = all_hidden_states + (hidden_states,)
 
-            attn_outputs = block(
-                hidden_states,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_value=past_key,
-                output_attentions=output_attentions,
-            )
-            hidden_states, _, past = attn_outputs
-            next_past_key_values.append(past)
+    #         attn_outputs = block(
+    #             hidden_states,
+    #             attention_mask=attention_mask,
+    #             position_ids=position_ids,
+    #             past_key_value=past_key_values,
+    #             output_attentions=output_attentions,
+    #         )
+    #         hidden_states, _, past = attn_outputs
+    #         # next_past_key_values.append(past)
 
-            if output_attentions:
-                all_attentions = all_attentions + (attn_outputs[1],)
+    #         if output_attentions:
+    #             all_attentions = all_attentions + (attn_outputs[1],)
         
         
-        return hidden_states, all_hidden_states, all_attentions, past_key_values
+    #     return hidden_states, all_hidden_states, all_attentions, past_key_values
 
     
     
@@ -204,6 +267,10 @@ class DyLlama(LlamaModel):
         layer_skip_index: List = [],
         generate_mode = True,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
+        # if input_ids.shape[1] != 1:
+            # super.forward()
+        
+        
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -224,9 +291,6 @@ class DyLlama(LlamaModel):
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
-        
-        print(input_ids.shape)
-        print(input_ids)
 
         # kept for BC (non `Cache` `past_key_values` inputs)
         return_legacy_cache = False
@@ -268,7 +332,6 @@ class DyLlama(LlamaModel):
                 all_hidden_states += (hidden_states,)
             
             
-            
             if i in layer_skip_index:
                 # First, fill the key and value states with dummy value and record
                 # Later, check the skip_control to restore key, value 
@@ -281,7 +344,14 @@ class DyLlama(LlamaModel):
                 layer_outputs = (hidden_states, None, past_key_values)
             else: 
                 # if it is not skipped computation, it should check the cache and make input
+                
+                # print("before cache")
+                # print(hidden_states.shape)
+                
                 hidden_states = past_key_values.get_past(idx=i, hidden_state=hidden_states) # it will return same thing if there are no prev states
+                
+                # print("after cache")
+                # print(hidden_states.shape)
                 
                 
                 if self.gradient_checkpointing and self.training:
@@ -308,8 +378,6 @@ class DyLlama(LlamaModel):
                         position_embeddings=position_embeddings,
                     )
                     
-            
-
             hidden_states = layer_outputs[0]
 
             if use_cache:
@@ -342,6 +410,144 @@ class DyLlama(LlamaModel):
             attentions=all_self_attns,
             layer_feature=layer_feature
         )
+
+
+
+
+    def get_features(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        skip_block = 0,
+        layer_skip_index: List = [],
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError(
+                "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
+            )
+
+        if self.gradient_checkpointing and self.training and use_cache:
+            print(
+                "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
+            )
+            use_cache = False
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        # kept for BC (non `Cache` `past_key_values` inputs)
+        return_legacy_cache = False
+        if use_cache and not isinstance(past_key_values, Cache):
+            return_legacy_cache = True
+            if past_key_values is None:
+                past_key_values = DyDynamicCache()
+            else:
+                past_key_values = DyDynamicCache.from_legacy_cache(past_key_values)
+                print(
+                    "We detected that you are passing `past_key_values` as a tuple of tuples. This is deprecated and "
+                    "will be removed in v4.47. Please convert your cache or use an appropriate `Cache` class "
+                    "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
+                )
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
+
+        causal_mask = self._update_causal_mask(
+            attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
+        )
+        hidden_states = inputs_embeds
+
+        # create position embeddings to be shared across the decoder layers
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+        # decoder layers
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attns = () if output_attentions else None
+        next_decoder_cache = None
+        
+        for i, decoder_layer in enumerate(self.layers[:skip_block]):
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+                        
+            if self.gradient_checkpointing and self.training:
+                layer_outputs = self._gradient_checkpointing_func(
+                    decoder_layer.__call__,
+                    hidden_states,
+                    causal_mask,
+                    position_ids,
+                    past_key_values,
+                    output_attentions,
+                    use_cache,
+                    cache_position,
+                    position_embeddings,
+                )
+            else:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_values,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    position_embeddings=position_embeddings,
+                )
+                
+            hidden_states = layer_outputs[0]
+
+            if use_cache:
+                next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+
+            if skip_block == i:
+                layer_feature = hidden_states
+
+            if output_attentions:
+                all_self_attns += (layer_outputs[1],)
+
+        hidden_states = self.norm(hidden_states)
+        
+        
+        # add hidden states from the last decoder layer
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        next_cache = next_decoder_cache if use_cache else None
+        if return_legacy_cache:
+            next_cache = next_cache.to_legacy_cache()
+
+        if not return_dict:
+            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+        
+        return DyBaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
+            past_key_values=next_cache,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attns,
+            layer_feature=None
+        )
+
+
 
 
 
@@ -451,9 +657,7 @@ class DyLM(LlamaForCausalLM):
         )
     
     
-    from transformers.generation.utils import GenerationMixin
-    from transformers.generation.utils import DynamicCache
-     
+    
     def _sample(
         self,
         input_ids: torch.LongTensor,
@@ -495,6 +699,13 @@ class DyLM(LlamaForCausalLM):
             `return_dict_in_generate=True` or a [`~generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
         """
+        
+        # change DynamicCache to DyDynamicCache
+        if isinstance(model_kwargs["past_key_values"], DynamicCache) and model_kwargs["past_key_values"]._seen_tokens == 0:
+            model_kwargs["past_key_values"] = DyDynamicCache()
+            print(f"DynamicCache is replaced with DyDynamicCache")
+        
+        
         # init values
         pad_token_id = generation_config._pad_token_tensor
         output_attentions = generation_config.output_attentions
@@ -532,18 +743,21 @@ class DyLM(LlamaForCausalLM):
         # print(model_kwargs['past_key_values'].value_cache)
         # exit()
 
+        W = 0
         while self._has_unfinished_sequences(
             this_peer_finished, synced_gpus, device=input_ids.device, cur_len=cur_len, max_length=max_length
         ):
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-
+            
             # prepare variable output controls (note: some models won't accept all output controls)
             model_inputs.update({"output_attentions": output_attentions} if output_attentions else {})
             model_inputs.update({"output_hidden_states": output_hidden_states} if output_hidden_states else {})
 
             # forward pass to get next token
+            print(f"{W} sampling")
             outputs = self(**model_inputs, return_dict=True) 
+            W += 1
 
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
@@ -666,7 +880,9 @@ class DyLM(LlamaForCausalLM):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         # call original model
-        if self.skip_block == 0:            
+        # if no skip calculation or if it is prefix
+        if (self.skip_block == 0) or (input_ids.shape[1] != 1):            
+            print("current processing prefix")
             return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -686,7 +902,7 @@ class DyLM(LlamaForCausalLM):
         output_hidden_states = self.get_hidden
             
         # forward only some block to get features
-        hidden_states, all_hidden_states, all_attentions, past_key_values = self.model.get_features(
+        t_o = self.model.get_features(
             input_ids,
             attention_mask,
             position_ids,
@@ -696,6 +912,9 @@ class DyLM(LlamaForCausalLM):
             output_hidden_states,
             skip_block=skip_block,
         ) # hidden_states [b, L, 4096]
+        
+        
+        hidden_states, all_hidden_states, all_attentions, past_key_values =  t_o.last_hidden_state, t_o.hidden_states, t_o.attentions, t_o.past_key_values
         
         # predictor
         self.layer_prob = self.predictor(hidden_states)

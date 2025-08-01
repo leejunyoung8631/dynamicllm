@@ -64,7 +64,6 @@ PREFIXES = [
 
 import random
 
-
 def main(args):
     #  Set WanDB
     # os.environ["WANDB_PROJECT"] = args.wandb_project
@@ -92,7 +91,11 @@ def main(args):
     
     ### test for just llm architecture
     prompt = random.choice(PREFIXES)
+    sentence = prompt
     prompt = tokenizer(prompt, return_tensors="pt").to(device)
+    
+    
+    print(f"prompt : {sentence}")
     
     generate_ids = model.generate(
         **prompt,
