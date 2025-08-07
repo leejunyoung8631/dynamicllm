@@ -227,25 +227,35 @@ class DyLlama(LlamaModel):
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
+        
+        cache_skip_block = []
+        cache_skip_hidden = []
 
         for i, decoder_layer in enumerate(self.layers[skip_block:]):
+            print(f"{i+skip_block} layer")
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             
             
-            if i in layer_skip_index:
+            if (i+skip_block) in layer_skip_index:
                 # First, fill the key and value states with dummy value and record
                 # Later, check the skip_control to restore key, value 
                 past_key_values.update(
                     key_states = torch.tensor(0),
                     value_states = torch.tensor(0),
                     layer_idx = -100,
-                )
-                past_key_values.add_to_buffer(i, hidden_states)
-                layer_outputs = (hidden_states, None, past_key_values)
+                )    
+                # v1 : add (idx, hidden_state) to buffer in advance.
+                # past_key_values.add_to_buffer(i+skip_block, hidden_states)
+                
+                # # v2 add to buffer whole things at once.
+                cache_skip_block.append((i+skip_block))
+                cache_skip_hidden.append(hidden_states)
+                
+                layer_outputs = (hidden_states, None, past_key_values) 
             else: 
                 # if it is not skipped computation, it should check the cache and make input
-                hidden_states = past_key_values.get_past(idx=i, hidden_state=hidden_states) # it will return same thing if there are no prev states
+                hidden_states = past_key_values.get_past(idx=i+skip_block, hidden_state=hidden_states, layer_skip_len=len(layer_skip_index)) # it will return same thing if there are no prev states
                 
                 
                 if self.gradient_checkpointing and self.training:
@@ -274,8 +284,6 @@ class DyLlama(LlamaModel):
                     
             hidden_states = layer_outputs[0]
             
-            print(f"Layer {i+1}")
-            print(hidden_states[0][0][:8])
 
             if use_cache:
                 next_decoder_cache = layer_outputs[2 if output_attentions else 1]
@@ -286,6 +294,12 @@ class DyLlama(LlamaModel):
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
+        
+        
+        # v2.1 add to buffer whole things at once1
+        if len(cache_skip_block) != 0:
+            past_key_values.add_to_buffer(cache_skip_block, cache_skip_hidden)
+        past_key_values.prev_len = len(layer_skip_index)
 
         hidden_states = self.norm(hidden_states)
 
@@ -424,7 +438,6 @@ class DyLlama(LlamaModel):
 
         # do not norm in get_feature function
         # hidden_states = self.norm(hidden_states)
-        
         
         # add hidden states from the last decoder layer
         if output_hidden_states:
@@ -655,6 +668,7 @@ class DyLM(LlamaForCausalLM):
             model_inputs.update({"output_hidden_states": output_hidden_states} if output_hidden_states else {})
 
             # forward pass to get next token
+            print("\n")
             print(f"{W} sampling")
             # print("input shape: ", input_ids.shape)
             outputs = self(**model_inputs, return_dict=True) 
@@ -827,10 +841,20 @@ class DyLM(LlamaForCausalLM):
         # print("layer 0 : ", t_o.past_key_values.key_cache[0].shape) # [b, 8, prefix_len, dim]
         # print("layer 1 : ", t_o.past_key_values.key_cache[1].shape) # [b, 8, prefix_len, dim]
         
-        
         # predictor
-        self.layer_prob = self.predictor(hidden_states) # (token_len, n)
-        self.skip_order = [] # no skip, temp
+        self.layer_prob = self.predictor(hidden_states) # (b, token_len, n_class)
+        _, pred_idx = torch.max(self.layer_prob, dim=-1) # it supports only 1 batch
+        pred_idx = pred_idx.squeeze(1)
+        skip_idx =  self.skip_order[:pred_idx.item()]
+        
+        
+        # generate skip_idx for test : debug purpose
+        import random
+        rand_idx = random.randint(1, 3)
+        skip_idx = self.skip_order[:rand_idx]
+        print(f"rand_idx is {rand_idx} -> {skip_idx}")
+        
+        
         
         # forward the rest of blocks with mask or not
         model_outputs = self.model(
@@ -843,7 +867,7 @@ class DyLM(LlamaForCausalLM):
             output_hidden_states=all_hidden_states, # to all_hidden_states
             return_dict=return_dict,
             skip_block=skip_block,
-            layer_skip_index = self.skip_order,
+            layer_skip_index = skip_idx,
             position_embeddings=position_embeddings
         )
         

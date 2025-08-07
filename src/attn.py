@@ -194,9 +194,9 @@ class DyLlamaSdpaAttention(DyLlamaAttention):
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
             
             # print("here")
-            print(f"Layer index : {self.layer_idx} , key shape :", key_states.shape)
-            print(key_states[0][0][-1][:8])
-            print("\n")
+            # print(f"Layer index : {self.layer_idx} , key shape :", key_states.shape)
+            # print(key_states[0][0][-1][:8])
+            # print("\n")
             
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
@@ -259,25 +259,38 @@ class DyDynamicCache(DynamicCache):
                  ]
         '''
         self.buffer = []
+        self.prev_len = 0
         self.current_position = 0
     
     def add_to_buffer(self, layer_idx, layer_feature):
-        if len(self.buffer) == self.current_position:
-            self.buffer.append( {"skip_layers": [], "feature": []} )
-            self.current_position += 1
+        # if len(self.buffer) == self.current_position:
+        #     print("here")
+        #     self.buffer.append( {"skip_layers": [], "feature": []} )
+        self.current_position += 1
+        data = dict()
+        data["skip_layers"] = layer_idx
+        data["feature"] = layer_feature
         
-        self.buffer[-1]["skip_layers"].append(layer_idx)
-        self.buffer[-1]["feature"].append(layer_feature)
+        self.buffer.append(data)
+        
+        # for debug
+        print("hidden_state is added to buffer")
+        print(self.current_position)
+        print(self.buffer)
     
     
     # iter idx from the first and return all the proceeding hidden_states 
-    def get_past(self, idx, hidden_state):
+    def get_past(self, idx, hidden_state, layer_skip_len):
+        # if current block skip more, it can calculate without prev token calculation
+        if layer_skip_len >= self.prev_len:
+            return hidden_state
+        
         start_idx = None
         for k, entry in enumerate(self.buffer):
             if idx in entry["skip_layers"]:
                 start_idx = k
                 break
-                
+        
         if start_idx is None:
             return hidden_state
 
