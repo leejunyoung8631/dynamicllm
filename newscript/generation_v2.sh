@@ -9,7 +9,7 @@ CUDA_VISIBLE_DEVICES=0 python src/skip_generate.py \
             --cache_model_dir $CACHE_DIR \
             --cache_dataset_dir $CACHE_DIR \
             --skip_block 1 \
-            --model_class dylm
+            --model_class dylmm
 
 
 

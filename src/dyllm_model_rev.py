@@ -147,108 +147,7 @@ class DyLlama(LlamaModel):
         self.layers = nn.ModuleList(
             [DyLlamaDecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-    
-    
-    # def get_features(
-    #     self,
-    #     input_ids=None,
-    #     attention_mask=None,
-    #     position_ids=None,
-    #     past_key_values=None,
-    #     inputs_embeds=None,
-    #     output_attentions=None,
-    #     output_hidden_states=None,
-    #     skip_block=1,
-    # ):
-        
-    #     output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-    #     output_hidden_states = (
-    #         output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-    #     )
-    #     use_cache = use_cache if use_cache is not None else self.config.use_cache
-    #     return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-    #     if (input_ids is None) ^ (inputs_embeds is not None):
-    #         raise ValueError(
-    #             "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
-    #         )
-
-    #     if self.gradient_checkpointing and self.training and use_cache:
-    #         print(
-    #             "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
-    #         )
-    #         use_cache = False
-
-    #     if inputs_embeds is None:
-    #         inputs_embeds = self.embed_tokens(input_ids)
-
-    #     # kept for BC (non `Cache` `past_key_values` inputs)
-    #     return_legacy_cache = False
-    #     if use_cache and not isinstance(past_key_values, Cache):
-    #         return_legacy_cache = True
-    #         if past_key_values is None:
-    #             past_key_values = DyDynamicCache()
-    #         else:
-    #             past_key_values = DyDynamicCache.from_legacy_cache(past_key_values)
-    #             print(
-    #                 "We detected that you are passing `past_key_values` as a tuple of tuples. This is deprecated and "
-    #                 "will be removed in v4.47. Please convert your cache or use an appropriate `Cache` class "
-    #                 "(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
-    #             )
-
-    #     if cache_position is None:
-    #         past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-    #         cache_position = torch.arange(
-    #             past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
-    #         )
-    #     if position_ids is None:
-    #         position_ids = cache_position.unsqueeze(0)
-
-    #     causal_mask = self._update_causal_mask(
-    #         attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
-    #     )
-    #     hidden_states = inputs_embeds
-
-    #     # create position embeddings to be shared across the decoder layers
-    #     position_embeddings = self.rotary_emb(hidden_states, position_ids)
-        
-        
-        
-    
-    #     hidden_states = self.embed_tokens(input_ids) if input_ids is not None else inputs_embeds
-
-    #     all_hidden_states = () if output_hidden_states else None
-    #     all_attentions = () if output_attentions else None
-    #     past_key_values = past_key_values or [None] * len(self.layers)
-        
-    #     # print(past_key_values.key_cache[0].shape) # 32 * (batch, # of head, length, dim): 1, 8, 7, 128
-    #     # print(past_key_values.value_cache[0].shape) # 32 * (batch, # of head, length, dim): 1, 8, 7, 128
-    #     print("before : first layer")
-    #     print("hidden :", hidden_states.shape)
-        
-
-    #     # next_past_key_values = []
-    #     for i, block in enumerate(self.layers[:skip_block]):
-    #         if output_hidden_states:
-    #             all_hidden_states = all_hidden_states + (hidden_states,)
-
-    #         attn_outputs = block(
-    #             hidden_states,
-    #             attention_mask=attention_mask,
-    #             position_ids=position_ids,
-    #             past_key_value=past_key_values,
-    #             output_attentions=output_attentions,
-    #         )
-    #         hidden_states, _, past = attn_outputs
-    #         # next_past_key_values.append(past)
-
-    #         if output_attentions:
-    #             all_attentions = all_attentions + (attn_outputs[1],)
-        
-        
-    #     return hidden_states, all_hidden_states, all_attentions, past_key_values
-
-    
+       
     
     
     def forward(
@@ -265,11 +164,12 @@ class DyLlama(LlamaModel):
         cache_position: Optional[torch.LongTensor] = None,
         skip_block = 0,
         layer_skip_index: List = [],
-        generate_mode = True,
+        position_embeddings = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         # if input_ids.shape[1] != 1:
             # super.forward()
         
+
         
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -320,14 +220,15 @@ class DyLlama(LlamaModel):
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
-        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        if position_embeddings == None: 
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
-        for i, decoder_layer in enumerate(self.layers):
+        for i, decoder_layer in enumerate(self.layers[skip_block:]):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             
@@ -344,14 +245,7 @@ class DyLlama(LlamaModel):
                 layer_outputs = (hidden_states, None, past_key_values)
             else: 
                 # if it is not skipped computation, it should check the cache and make input
-                
-                # print("before cache")
-                # print(hidden_states.shape)
-                
                 hidden_states = past_key_values.get_past(idx=i, hidden_state=hidden_states) # it will return same thing if there are no prev states
-                
-                # print("after cache")
-                # print(hidden_states.shape)
                 
                 
                 if self.gradient_checkpointing and self.training:
@@ -379,6 +273,9 @@ class DyLlama(LlamaModel):
                     )
                     
             hidden_states = layer_outputs[0]
+            
+            print(f"Layer {i+1}")
+            print(hidden_states[0][0][:8])
 
             if use_cache:
                 next_decoder_cache = layer_outputs[2 if output_attentions else 1]
@@ -525,7 +422,8 @@ class DyLlama(LlamaModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-        hidden_states = self.norm(hidden_states)
+        # do not norm in get_feature function
+        # hidden_states = self.norm(hidden_states)
         
         
         # add hidden states from the last decoder layer
@@ -539,13 +437,15 @@ class DyLlama(LlamaModel):
         if not return_dict:
             return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
         
+        
         return DyBaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
             layer_feature=None
-        )
+        ), position_embeddings
+        
 
 
 
@@ -703,7 +603,7 @@ class DyLM(LlamaForCausalLM):
         # change DynamicCache to DyDynamicCache
         if isinstance(model_kwargs["past_key_values"], DynamicCache) and model_kwargs["past_key_values"]._seen_tokens == 0:
             model_kwargs["past_key_values"] = DyDynamicCache()
-            print(f"DynamicCache is replaced with DyDynamicCache")
+            # print(f"DynamicCache is replaced with DyDynamicCache")
         
         
         # init values
@@ -756,8 +656,10 @@ class DyLM(LlamaForCausalLM):
 
             # forward pass to get next token
             print(f"{W} sampling")
+            # print("input shape: ", input_ids.shape)
             outputs = self(**model_inputs, return_dict=True) 
             W += 1
+            # print(outputs)
 
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
@@ -853,7 +755,7 @@ class DyLM(LlamaForCausalLM):
     
         
     
-    # from transformers.generation.utils import GenerationMixin    
+    from transformers.generation.utils import GenerationMixin    
     def skip_generate():
         213122
     
@@ -882,8 +784,7 @@ class DyLM(LlamaForCausalLM):
         # call original model
         # if no skip calculation or if it is prefix
         if (self.skip_block == 0) or (input_ids.shape[1] != 1):            
-            print("current processing prefix")
-            return super().forward(
+            outputs = super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 position_ids=position_ids,
@@ -898,11 +799,17 @@ class DyLM(LlamaForCausalLM):
                 num_logits_to_keep=num_logits_to_keep,
             )
             
+            # print("prefix generation")
+            
+            # print(outputs.past_key_values.key_cache[0].shape) # [b, 8, prefix_len, dim]
+            
+            return outputs
+        
         skip_block = self.skip_block # the number of block for first processing before predictor
         output_hidden_states = self.get_hidden
             
         # forward only some block to get features
-        t_o = self.model.get_features(
+        t_o, position_embeddings = self.model.get_features(
             input_ids,
             attention_mask,
             position_ids,
@@ -916,8 +823,14 @@ class DyLM(LlamaForCausalLM):
         
         hidden_states, all_hidden_states, all_attentions, past_key_values =  t_o.last_hidden_state, t_o.hidden_states, t_o.attentions, t_o.past_key_values
         
+        # print("after get_feature")
+        # print("layer 0 : ", t_o.past_key_values.key_cache[0].shape) # [b, 8, prefix_len, dim]
+        # print("layer 1 : ", t_o.past_key_values.key_cache[1].shape) # [b, 8, prefix_len, dim]
+        
+        
         # predictor
-        self.layer_prob = self.predictor(hidden_states)
+        self.layer_prob = self.predictor(hidden_states) # (token_len, n)
+        self.skip_order = [] # no skip, temp
         
         # forward the rest of blocks with mask or not
         model_outputs = self.model(
@@ -930,7 +843,8 @@ class DyLM(LlamaForCausalLM):
             output_hidden_states=all_hidden_states, # to all_hidden_states
             return_dict=return_dict,
             skip_block=skip_block,
-            layer_skip_index = self.skip_order
+            layer_skip_index = self.skip_order,
+            position_embeddings=position_embeddings
         )
         
         

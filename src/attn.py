@@ -193,9 +193,10 @@ class DyLlamaSdpaAttention(DyLlamaAttention):
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
             
-            print("here")
-            print(key_states.shape)
-            print(value_states.shape)
+            # print("here")
+            print(f"Layer index : {self.layer_idx} , key shape :", key_states.shape)
+            print(key_states[0][0][-1][:8])
+            print("\n")
             
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)

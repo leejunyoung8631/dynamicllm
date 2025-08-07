@@ -42,10 +42,6 @@ from utils import get_model, set_model_device_evalmode, set_seed
 from eval_ppl import get_loaders_trainer
 
 
-from dyllm_model_rev import DyLM
-from transformers.models.llama import LlamaConfig
-transformers.models.auto.modeling_auto.MODEL_FOR_CAUSAL_LM_MAPPING[LlamaConfig] = DyLM
-
 
 
 
@@ -77,12 +73,17 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # model, tokenizer = get_model(args.base_model, args.cache_model_dir, device, args.use_bfloat, args.use_8bit_model)
     if args.model_class == "dylm":
+        from dyllm_model_rev import DyLM
+        from transformers.models.llama import LlamaConfig
+        transformers.models.auto.modeling_auto.MODEL_FOR_CAUSAL_LM_MAPPING[LlamaConfig] = DyLM
         model_class = DyLM
     else:
         model_class = AutoModelForCausalLM
     
     model, tokenizer = get_model(base_model=args.base_model, cache_dir=args.cache_model_dir, device=device, use_bfloat=args.use_bfloat, load_in_8bit=args.use_8bit_model, model_class=model_class)
     # model = load_weight(model, args.weight_path, )
+    
+    # print(model)
     
     model.skip_block = args.skip_block
     model.skip_order = args.skip_order
